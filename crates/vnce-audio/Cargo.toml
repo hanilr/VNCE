@@ -1,0 +1,35 @@
+[package]
+name = "vnce-audio"
+description = "Sound for the Variation CLI Engine: a mixer, WAV and OGG decoding, sound synthesis and audio output."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/vnce-audio"
+readme = "../../README.md"
+keywords = ["audio", "sound", "synthesizer", "game", "mixer"]
+categories = ["multimedia::audio", "game-development"]
+
+[lib]
+name = "vnce_audio"
+
+[lints]
+workspace = true
+
+[features]
+default = ["output"]
+# Playback on the default audio device with cpal. On Linux it needs the ALSA development
+# files (`libasound2-dev` on Debian / Ubuntu, `alsa-lib-devel` on Fedora).
+output = ["dep:cpal"]
+# OGG Vorbis decoding (pure Rust).
+ogg = ["dep:lewton"]
+
+[dependencies]
+cpal = { workspace = true, optional = true }
+lewton = { workspace = true, optional = true }
+
+# docs.rs documents every optional feature.
+[package.metadata.docs.rs]
+all-features = true
