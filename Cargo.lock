@@ -977,6 +977,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vnce-game"
+version = "0.1.0"
+dependencies = [
+ "vnce-core",
+ "vnce-raster",
+ "vnce-runtime",
+ "vnce-term",
+]
+
+[[package]]
 name = "vnce-gpu"
 version = "0.1.0"
 dependencies = [

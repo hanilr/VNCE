@@ -1,0 +1,26 @@
+[package]
+name = "vnce-game"
+description = "Game building blocks for the Variation CLI Engine: key bindings, collision, sprites, animation, tile maps, camera and scenes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/vnce-game"
+readme = "../../README.md"
+keywords = ["terminal", "game", "gamedev", "tilemap", "sprite"]
+categories = ["command-line-interface", "game-development", "game-engines"]
+
+[lib]
+name = "vnce_game"
+
+[lints]
+workspace = true
+
+[dependencies]
+vnce-core.workspace = true
+vnce-raster.workspace = true
+vnce-runtime.workspace = true
+vnce-term.workspace = true
+
