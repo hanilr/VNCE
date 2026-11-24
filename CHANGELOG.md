@@ -25,3 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unsupported.
 - `hello` example: styled and Unicode text, truecolor gradient, animation, resize and
   input events.
+- `TerminalOptions::keyboard_enhancement` and `Capabilities::key_release_events`: the kitty
+  keyboard protocol is enabled where supported so key releases are reported (always
+  available on Windows); it is popped again on restore and on panic.

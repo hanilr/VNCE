@@ -25,10 +25,19 @@ pub struct TerminalOptions {
     pub bracketed_paste: bool,
     /// Report focus gained / lost events.
     pub focus_events: bool,
+    /// Enable the kitty keyboard protocol where supported, to receive key repeat and
+    /// release events for every key (needed for "key held down" in games).
+    ///
+    /// In this mode character keys are reported as the base key plus modifiers: `Shift+=`
+    /// arrives as `Char('=')` with [`KeyModifiers::SHIFT`](crate::KeyModifiers::SHIFT), not
+    /// as `Char('+')`. On Windows releases are always reported and this option has no
+    /// effect.
+    pub keyboard_enhancement: bool,
 }
 
 impl Default for TerminalOptions {
-    /// Alternate screen, hidden cursor and bracketed paste; no mouse or focus events.
+    /// Alternate screen, hidden cursor and bracketed paste; no mouse or focus events and no
+    /// keyboard enhancement.
     fn default() -> Self {
         Self {
             alternate_screen: true,
@@ -36,6 +45,7 @@ impl Default for TerminalOptions {
             mouse_capture: false,
             bracketed_paste: true,
             focus_events: false,
+            keyboard_enhancement: false,
         }
     }
 }
@@ -160,6 +170,9 @@ impl<B: Backend> Terminal<B> {
         self.backend.enter(&options)?;
         self.entered = true;
         self.full_redraw = true;
+        if self.backend.key_release_events() {
+            self.capabilities.key_release_events = true;
+        }
         Ok(())
     }
 
@@ -496,6 +509,7 @@ mod tests {
         terminal.set_capabilities(Capabilities {
             color_depth: ColorDepth::Indexed256,
             synchronized_output: false,
+            key_release_events: false,
         });
         terminal
             .draw(|f| {
@@ -533,5 +547,14 @@ mod tests {
         assert!(terminal.backend().is_entered());
         terminal.leave_mode().unwrap();
         assert!(!terminal.backend().is_entered());
+    }
+
+    #[test]
+    fn key_release_capability_comes_from_the_backend() {
+        let mut terminal = terminal(1, 1);
+        assert!(!terminal.capabilities().key_release_events);
+        terminal.backend_mut().set_key_release_events(true);
+        terminal.enter_mode(TerminalOptions::default()).unwrap();
+        assert!(terminal.capabilities().key_release_events);
     }
 }

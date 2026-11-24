@@ -49,11 +49,21 @@ pub trait Backend {
     ///
     /// Returns an error if the terminal cannot be restored.
     fn leave(&mut self) -> io::Result<()>;
+
+    /// Whether key release events are reported since the last [`Backend::enter`].
+    ///
+    /// The default implementation returns `false`.
+    fn key_release_events(&self) -> bool {
+        false
+    }
 }
 
 /// Set while a [`CrosstermBackend`] has the terminal in full-screen mode; used by the
 /// panic hook to know whether the terminal must be restored.
 static TERMINAL_ENTERED: AtomicBool = AtomicBool::new(false);
+
+/// Set while the kitty keyboard protocol flags are pushed; used to pop them on restore.
+static KEYBOARD_ENHANCED: AtomicBool = AtomicBool::new(false);
 
 /// Installs the panic hook only once per process.
 static PANIC_HOOK: Once = Once::new();
@@ -66,6 +76,8 @@ static PANIC_HOOK: Once = Once::new();
 #[derive(Debug)]
 pub struct CrosstermBackend {
     stdout: io::Stdout,
+    /// Whether the kitty keyboard protocol was enabled by [`Backend::enter`].
+    keyboard_enhanced: bool,
 }
 
 impl CrosstermBackend {
@@ -74,6 +86,7 @@ impl CrosstermBackend {
     pub fn new() -> Self {
         Self {
             stdout: io::stdout(),
+            keyboard_enhanced: false,
         }
     }
 }
@@ -106,12 +119,20 @@ impl Backend for CrosstermBackend {
             restore_terminal();
             return Err(error);
         }
+        self.keyboard_enhanced =
+            options.keyboard_enhancement && enable_keyboard_enhancement(&mut self.stdout);
         Ok(())
     }
 
     fn leave(&mut self) -> io::Result<()> {
         restore_terminal();
+        self.keyboard_enhanced = false;
         Ok(())
+    }
+
+    fn key_release_events(&self) -> bool {
+        // The Windows console API always reports key releases.
+        cfg!(windows) || self.keyboard_enhanced
     }
 }
 
@@ -146,6 +167,31 @@ fn enter_modes(stdout: &mut io::Stdout, options: TerminalOptions) -> io::Result<
     Ok(())
 }
 
+/// Enables the kitty keyboard protocol if the terminal supports it, so that key repeat and
+/// release events are reported for every key. Returns `true` on success.
+///
+/// It is never enabled on Windows, where the console API already reports releases.
+/// The flags are pushed after entering the alternate screen because terminals keep a
+/// separate protocol stack per screen.
+fn enable_keyboard_enhancement(stdout: &mut io::Stdout) -> bool {
+    use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
+    use crossterm::execute;
+
+    if cfg!(windows) || !crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false) {
+        return false;
+    }
+    // Reporting all keys as escape codes is required to get release events for keys that
+    // produce text (letters, digits, ...).
+    let flags = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+        | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
+    if execute!(stdout, PushKeyboardEnhancementFlags(flags)).is_err() {
+        return false;
+    }
+    KEYBOARD_ENHANCED.store(true, Ordering::SeqCst);
+    true
+}
+
 /// Restores the terminal: disables every mode the engine may have enabled, leaves the
 /// alternate screen, shows the cursor and disables raw mode. Errors are ignored because
 /// this runs during cleanup (including from the panic hook).
@@ -157,6 +203,10 @@ fn restore_terminal() {
     }
     let mut stdout = io::stdout();
     let _ = stdout.write_all(b"\x1b[0m");
+    // Popped before leaving the alternate screen, where the flags were pushed.
+    if KEYBOARD_ENHANCED.swap(false, Ordering::SeqCst) {
+        let _ = execute!(stdout, event::PopKeyboardEnhancementFlags);
+    }
     let _ = execute!(stdout, event::DisableFocusChange);
     let _ = execute!(stdout, event::DisableBracketedPaste);
     let _ = execute!(stdout, event::DisableMouseCapture);
@@ -192,6 +242,7 @@ pub struct TestBackend {
     style: (Color, Color, Modifiers),
     entered: bool,
     flushes: usize,
+    key_release_events: bool,
 }
 
 impl TestBackend {
@@ -207,7 +258,13 @@ impl TestBackend {
             style: (Color::Reset, Color::Reset, Modifiers::NONE),
             entered: false,
             flushes: 0,
+            key_release_events: false,
         }
+    }
+
+    /// Sets the value returned by [`Backend::key_release_events`].
+    pub fn set_key_release_events(&mut self, enabled: bool) {
+        self.key_release_events = enabled;
     }
 
     /// Changes the reported terminal size, like a window resize. The screen is cleared.
@@ -404,6 +461,10 @@ impl Backend for TestBackend {
     fn leave(&mut self) -> io::Result<()> {
         self.entered = false;
         Ok(())
+    }
+
+    fn key_release_events(&self) -> bool {
+        self.key_release_events
     }
 }
 

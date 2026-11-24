@@ -9,14 +9,23 @@ pub struct Capabilities {
     pub color_depth: ColorDepth,
     /// Whether synchronized output (`CSI ? 2026 h/l`) is used to avoid tearing.
     pub synchronized_output: bool,
+    /// Whether key release events are reported
+    /// ([`KeyEventKind::Release`](crate::input::KeyEventKind::Release)).
+    ///
+    /// Always `true` on Windows. On other platforms it becomes `true` after
+    /// [`Terminal::enter_mode`](crate::Terminal::enter_mode) when
+    /// [`TerminalOptions::keyboard_enhancement`](crate::TerminalOptions) is enabled and the
+    /// terminal supports the kitty keyboard protocol.
+    pub key_release_events: bool,
 }
 
 impl Default for Capabilities {
-    /// Truecolor with synchronized output.
+    /// Truecolor with synchronized output, without key release events.
     fn default() -> Self {
         Self {
             color_depth: ColorDepth::TrueColor,
             synchronized_output: true,
+            key_release_events: false,
         }
     }
 }
@@ -62,6 +71,9 @@ impl Capabilities {
     ///
     /// Synchronized output is disabled for `TERM=dumb`, the Linux console and the classic
     /// Windows console, which do not support it.
+    ///
+    /// Key release events are reported as available on Windows only; on other platforms
+    /// [`Terminal::enter_mode`](crate::Terminal::enter_mode) enables them when possible.
     #[must_use]
     pub fn detect() -> Self {
         Self::from_env(|name| std::env::var(name).ok(), cfg!(windows))
@@ -106,6 +118,9 @@ impl Capabilities {
         Self {
             color_depth,
             synchronized_output,
+            // The Windows console API reports key releases. Elsewhere this is only known
+            // after the keyboard protocol has been negotiated.
+            key_release_events: windows,
         }
     }
 }
@@ -187,6 +202,13 @@ mod tests {
         let windows_terminal = detect(&[("WT_SESSION", "abc")], true);
         assert_eq!(windows_terminal.color_depth, ColorDepth::TrueColor);
         assert!(windows_terminal.synchronized_output);
+        assert!(windows_terminal.key_release_events);
+    }
+
+    #[test]
+    fn key_releases_are_unknown_before_entering_on_unix() {
+        assert!(!detect(&[("TERM", "xterm-kitty")], false).key_release_events);
+        assert!(detect(&[], true).key_release_events);
     }
 
     #[test]
