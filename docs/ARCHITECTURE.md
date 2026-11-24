@@ -27,7 +27,7 @@ The engine is **cross-platform** and targets:
 | `vnce-runtime`    | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.   | Phase 2 |
 | `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Phase 3 |
 | `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.   | Phase 5 |
-| `vnce-ui`         | `vnce_ui`      | A small set of widgets for games and graphics applications.      | Planned |
+| `vnce-ui`         | `vnce_ui`      | A small set of widgets for games and graphics applications.      | Phase 6 |
 | `vnce` | `vnce`  | Public facade; re-exports the crates above behind feature flags. | Phase 1 |
 
 Package names use the `vnce-` prefix to avoid collisions on crates.io.
@@ -137,11 +137,27 @@ A game loop with a fixed timestep, frame pacing and input dispatch:
   kitty keyboard protocol) give exact releases; elsewhere a timeout is used.
 - A `Driver` trait (clock + events) makes runs deterministic in tests (`ScriptedDriver`).
 
-### Widgets (planned)
+### Widgets
 
 Only what games and graphics applications need: `Text`/`Label` (Unicode, wrapping,
 alignment), `Block` (box-drawing borders, title), `Gauge`, `Layout` (rect splitting) and
 an `FpsOverlay` for debugging.
+
+- Immediate mode: `Widget::render(area, buffer)` every frame; `List` keeps its selection
+  and scroll position in a `ListState` (`StatefulWidget`).
+- `Layout`: `Length`, `Percentage`, `Ratio`, `Min`, `Max` and `Fill` constraints with
+  spacing and margin; shrinks proportionally (`Min` last) when space is short, shares free
+  space by weight, gives rounding leftovers to the largest fractions and never leaves the
+  area. `Rect::centered` places popups.
+- Text (`Span` / `Line` / `Text`, `Paragraph`): styles are layered patches; word wrapping
+  keeps wide characters whole and breaks words longer than a row; cut lines end with `…`;
+  control characters are never drawn.
+- `Block`: plain, rounded, double, thick or ASCII borders on any sides, titles on the top
+  and bottom edges (left, center, right), padding. `Gauge` fills in eighths of a cell,
+  `FpsOverlay` adds a sparkline, `Clear` resets an area under popups.
+- Every widget that uses box-drawing or block characters has an ASCII option.
+- Text drawn over Sixel / iTerm2 images is hidden by them, so popups over such images do
+  not show; Kitty and cell modes are fine.
 
 ## Roadmap
 
@@ -155,6 +171,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-4-graphics-protocols.md`](plans/2026-11-24-phase-4-graphics-protocols.md).
 5. **Phase 5:** `vnce-gpu` — `wgpu` renderer — see
    [`plans/2026-11-24-phase-5-gpu.md`](plans/2026-11-24-phase-5-gpu.md).
-6. **Phase 6:** `vnce-ui` — widgets.
+6. **Phase 6:** `vnce-ui` — widgets — see
+   [`plans/2026-11-24-phase-6-ui.md`](plans/2026-11-24-phase-6-ui.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

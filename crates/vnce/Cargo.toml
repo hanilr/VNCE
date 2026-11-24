@@ -23,8 +23,12 @@ vnce-term.workspace = true
 vnce-runtime.workspace = true
 vnce-raster = { workspace = true, features = ["png"] }
 vnce-gpu = { workspace = true, optional = true }
+vnce-ui = { workspace = true, optional = true }
 
 [features]
+default = ["ui"]
+# Widgets (`vnce::vnce_ui`): layout, text, blocks, gauges, lists. Light, on by default.
+ui = ["dep:vnce-ui"]
 # GPU rendering with wgpu (`vnce::vnce_gpu`). Off by default: wgpu is a large dependency.
 gpu = ["dep:vnce-gpu"]
 
@@ -35,3 +39,7 @@ required-features = ["gpu"]
 [[example]]
 name = "gpu_cube"
 required-features = ["gpu"]
+
+[[example]]
+name = "ui"
+required-features = ["ui"]

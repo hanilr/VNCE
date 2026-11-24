@@ -23,3 +23,8 @@ pub use vnce_raster;
 /// and meshes. Requires the `gpu` feature.
 #[cfg(feature = "gpu")]
 pub use vnce_gpu;
+
+/// Widgets for games and graphics applications: layout, text, blocks, gauges, lists and an
+/// FPS overlay. Enabled by default (feature `ui`).
+#[cfg(feature = "ui")]
+pub use vnce_ui;

@@ -46,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolution.
 - `gpu_shader` (raymarched scene) and `gpu_cube` (3D cubes with anti-aliasing) examples
   with `--bench` timings.
+- `vnce-ui` (`vnce_ui`, feature `ui` of `vnce`, on by default): `Widget` /
+  `StatefulWidget`, `Layout` with `Length` / `Percentage` / `Ratio` / `Min` / `Max` / `Fill`
+  constraints, `Span` / `Line` / `Text` and `Paragraph` (alignment, word wrapping, `…`,
+  scrolling), `Block` (five border sets, titles, padding), `Gauge` (1/8-cell precision),
+  `List` / `ListState` (menus), `FpsOverlay` (with a sparkline) and `Clear`.
+  `Rect::centered` in `vnce_core`.
+- `ui` example: a dashboard with a menu, gauges, a pixel chart, scrolling text, a popup
+  and an FPS overlay.
 
 ### Fixed
 

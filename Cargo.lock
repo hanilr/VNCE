@@ -959,6 +959,7 @@ dependencies = [
  "vnce-raster",
  "vnce-runtime",
  "vnce-term",
+ "vnce-ui",
 ]
 
 [[package]]

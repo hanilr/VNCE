@@ -26,6 +26,7 @@ vnce-gpu = { path = "crates/vnce-gpu", version = "0.1.0" }
 vnce-raster = { path = "crates/vnce-raster", version = "0.1.0", default-features = false }
 vnce-runtime = { path = "crates/vnce-runtime", version = "0.1.0" }
 vnce-term = { path = "crates/vnce-term", version = "0.1.0" }
+vnce-ui = { path = "crates/vnce-ui", version = "0.1.0" }
 
 # External crates.
 bytemuck = { version = "1.25", features = ["derive"] }
