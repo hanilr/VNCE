@@ -7,7 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation = "https://docs.rs/vnce-gpu"
 readme = "../../README.md"
 keywords = ["terminal", "graphics", "gpu", "wgpu", "rendering"]

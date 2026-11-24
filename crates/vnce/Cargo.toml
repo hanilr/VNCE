@@ -7,7 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation = "https://docs.rs/vnce"
 readme = "../../README.md"
 keywords = ["terminal", "graphics", "game-engine", "tui", "gpu"]
