@@ -295,12 +295,16 @@ fn bin(color: Rgb) -> usize {
 /// Lookup table entry: not computed yet.
 const UNSET: u16 = u16::MAX;
 /// Lookup table entry: several exact palette colors share this bin; search them.
-const SEARCH: u16 = u16::MAX - 1;
+/// (Entries from `SEARCH` up are `SEARCH + n`: the colors of the bin are in `shared[n]`, so
+/// only those few are searched, not the whole palette.)
+const SEARCH: u16 = 256;
 
 /// The colors of an image and a table from histogram bins to palette indices.
 struct Palette {
     colors: Vec<Rgb>,
     lookup: Vec<u16>,
+    /// The exact colors (and their indices) of bins shared by several palette colors.
+    shared: Vec<Vec<(Rgb, u8)>>,
 }
 
 impl Palette {
@@ -308,6 +312,20 @@ impl Palette {
         Self {
             colors,
             lookup: vec![UNSET; BINS],
+            shared: Vec::new(),
+        }
+    }
+
+    /// Records that palette color `index` shares its bin with other palette colors.
+    fn share(&mut self, index: u8) {
+        let color = self.colors[usize::from(index)];
+        let b = bin(color);
+        let entry = self.lookup[b];
+        if (SEARCH..UNSET).contains(&entry) {
+            self.shared[usize::from(entry - SEARCH)].push((color, index));
+        } else {
+            self.lookup[b] = SEARCH + u16::try_from(self.shared.len()).unwrap_or(0);
+            self.shared.push(vec![(color, index)]);
         }
     }
 
@@ -316,7 +334,14 @@ impl Palette {
         let bin = bin(color);
         let entry = self.lookup[bin];
         match entry {
-            SEARCH => nearest(&self.colors, color),
+            entry if (SEARCH..UNSET).contains(&entry) => {
+                let colors = &self.shared[usize::from(entry - SEARCH)];
+                // Exact colors of the palette are found among the few in their bin.
+                colors
+                    .iter()
+                    .find(|(c, _)| *c == color)
+                    .map_or_else(|| nearest(&self.colors, color), |&(_, index)| index)
+            }
             UNSET => {
                 // The middle of the bin stands for every color in it.
                 let center = color.map(|c| (c & !7) | 4);
@@ -424,13 +449,14 @@ fn build_palette(pixels: &[Rgba], histogram: &Histogram, max_colors: usize) -> P
             let mut colors: Vec<Rgb> = exact.into_keys().collect();
             colors.sort_unstable();
             let mut palette = Palette::new(colors);
-            for (index, color) in palette.colors.iter().enumerate() {
-                let b = bin(*color);
-                palette.lookup[b] = if mixed[b] {
-                    SEARCH
+            for index in 0..palette.colors.len() {
+                let b = bin(palette.colors[index]);
+                let index = u8::try_from(index).unwrap_or(u8::MAX);
+                if mixed[b] {
+                    palette.share(index);
                 } else {
-                    u16::try_from(index).unwrap_or(0)
-                };
+                    palette.lookup[b] = u16::from(index);
+                }
             }
             return palette;
         }
@@ -830,6 +856,30 @@ mod tests {
                 "pixel {index}: {got:?} vs {want:?}"
             );
         }
+    }
+
+    #[test]
+    fn close_colors_sharing_a_bin_keep_their_exact_colors() {
+        // A sky gradient: neighbouring rows differ by one step, so several exact colors
+        // fall into each 5-bit bin.
+        let mut canvas = Canvas::new(8, 64);
+        canvas.set_blend_mode(crate::BlendMode::Replace);
+        for y in 0..64 {
+            let v = 100 + y as u8;
+            canvas.fill_rect(0, y, 8, 1, Rgba::rgb(v / 2, v, 200));
+        }
+        let mut palette = build_palette(canvas.pixels(), &Histogram::of(canvas.pixels()), 256);
+        assert_eq!(palette.colors.len(), 64, "every exact color is kept");
+        assert!(!palette.shared.is_empty(), "some bins are shared");
+        for pixel in canvas.pixels() {
+            let color = [pixel.r, pixel.g, pixel.b];
+            let index = palette.index(color);
+            assert_eq!(palette.colors[usize::from(index)], color);
+        }
+        // A color that is not in the palette maps to the nearest one.
+        let other = [61, 122, 201];
+        let index = palette.index(other);
+        assert_eq!(palette.colors[usize::from(index)], [61, 122, 200]);
     }
 
     #[test]
