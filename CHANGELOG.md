@@ -51,3 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   character database by `tools/gen-block-tables`.
 - PNG loading: `Canvas::from_png` and `Canvas::load_png` (feature `png`, enabled by
   default) for every PNG color type and bit depth.
+- `raster` example: plasma (or a PNG given on the command line), gradient triangle,
+  anti-aliased cube and ring, bouncing sprite; `M` cycles pixel modes, `D` toggles
+  dithering, `--bench` prints conversion timings.

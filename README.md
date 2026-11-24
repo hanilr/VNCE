@@ -5,8 +5,8 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 2: core types, terminal layer and game loop). The API is not
-> stable yet.
+> **Status:** early development (Phase 3: core types, terminal layer, game loop and pixel
+> graphics). The API is not stable yet.
 
 ## Usage
 
@@ -33,14 +33,23 @@ fn main() -> std::io::Result<()> {
 For games, implement `vnce_runtime::Game` and call `vnce_runtime::run`: updates run at a fixed
 rate, frames at a configurable limit, and `ctx.input()` tells which keys are held down.
 
+For pixel graphics, draw on a `vnce_raster::Canvas` (lines, shapes, triangles, sprites, PNG
+images) and convert it into cells with `canvas.render(buffer, area, mode, &options)`.
+`PixelMode::detect` picks a mode that works on the current terminal.
+
 Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
-cargo run --example hello   # styles, colors, Unicode, input events
-cargo run --example stars   # a small game: move with arrows/WASD, +/- to change the FPS
+cargo run --example hello             # styles, colors, Unicode, input events
+cargo run --example stars             # a small game: arrows/WASD, +/- to change the FPS
+cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
+cargo run --release --example raster -- image.png   # show a PNG image
 ```
 
-Set `VNCE_COLOR_DEPTH` to `truecolor`, `256`, `16` or `none` to override color detection.
+Environment overrides:
+
+- `VNCE_COLOR_DEPTH`: `truecolor`, `256`, `16` or `none`.
+- `VNCE_PIXEL_MODE`: `halfblock`, `quadrant`, `sextant`, `octant`, `braille` or `ascii`.
 
 ## Building
 
@@ -61,6 +70,8 @@ cargo fmt --all --check
 | `crates/vnce-core/`        | Core types (`vnce_core`).                   |
 | `crates/vnce-term/`        | Terminal layer (`vnce_term`).               |
 | `crates/vnce-runtime/`     | Game loop and input state (`vnce_runtime`). |
+| `crates/vnce-raster/`      | Pixel canvas and pixel modes (`vnce_raster`). |
+| `tools/gen-block-tables/`       | Generates block-character tables.         |
 | `docs/ARCHITECTURE.md`          | High-level design.                        |
 | `docs/plans/`                   | Approved implementation plans.            |
 | `CHANGELOG.md`                  | Release history.                          |

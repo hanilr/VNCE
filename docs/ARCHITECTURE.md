@@ -25,7 +25,7 @@ The engine is **cross-platform** and targets:
 | `vnce-core`       | `vnce_core`    | Geometry, color, style, cell and buffer types.                   | Phase 1 |
 | `vnce-term`       | `vnce_term`    | Terminal output, double-buffered rendering, input, capabilities. | Phase 1 |
 | `vnce-runtime`    | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.   | Phase 2 |
-| `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Planned |
+| `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Phase 3 |
 | `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering and readback.                         | Planned |
 | `vnce-ui`         | `vnce_ui`      | A small set of widgets for games and graphics applications.      | Planned |
 | `vnce` | `vnce`  | Public facade; re-exports the crates above behind feature flags. | Phase 1 |
@@ -54,23 +54,34 @@ Package names use the `vnce-` prefix to avoid collisions on crates.io.
 - **Color depth detection** (truecolor / 256 / 16); colors are downsampled to the nearest
   supported color.
 
-### Pixel modes (planned)
+### Pixel modes
 
-| Mode                   | Pixels per cell | Color                          |
-| ---------------------- | --------------- | ------------------------------ |
-| Half-block `▀`         | 1×2             | Each pixel has its own color   |
-| Quadrant               | 2×2             | Two colors per cell            |
-| Sextant (Unicode 13)   | 2×3             | Two colors per cell            |
-| Octant (Unicode 16)    | 2×4             | Two colors per cell            |
-| Braille                | 2×4             | One color per cell             |
-| Kitty / Sixel / iTerm2 | Real pixels     | Full color                     |
+| Mode                   | Pixels per cell | Color                          | Status  |
+| ---------------------- | --------------- | ------------------------------ | ------- |
+| Half-block `▀`         | 1×2             | Each pixel has its own color   | Phase 3 |
+| Quadrant               | 2×2             | Two colors per cell            | Phase 3 |
+| Sextant (Unicode 13)   | 2×3             | Two colors per cell            | Phase 3 |
+| Octant (Unicode 16)    | 2×4             | Two colors per cell            | Phase 3 |
+| Braille                | 2×4             | Dot color + background         | Phase 3 |
+| ASCII ramp             | 1×2             | Works without color support    | Phase 3 |
+| Kitty / Sixel / iTerm2 | Real pixels     | Full color                     | Planned |
 
-For two-color modes the best foreground/background pair is chosen per cell. Unsupported
-modes fall back automatically to a supported one.
+For two-color modes the best foreground/background pair is chosen per cell. Uniform cells
+are drawn as a space with a background color, so they never depend on the font.
 
-### CPU renderer (planned)
+`PixelMode::detect` is compatible with every device: `Ascii` without color support,
+`Sextant` only on terminals that draw block glyphs themselves (Kitty, WezTerm, foot,
+Ghostty), `HalfBlock` everywhere else. `Octant` and `Braille` are opt-in.
+`VNCE_PIXEL_MODE` overrides the choice.
 
-Own rasterizer: lines, rectangles, circles, triangles, sprites, alpha blending.
+The block tables are generated from the Unicode character database by
+`tools/gen-block-tables`.
+
+### CPU renderer
+
+Own rasterizer in `vnce_raster::Canvas`: Bresenham and anti-aliased (Wu) lines, rectangles,
+circles, triangles with a top-left fill rule and per-vertex gradients, sprite blitting,
+`Replace` / `Alpha` / `Add` / `Multiply` blending, clipping and PNG loading.
 Optional parallelism may be added later.
 
 ### GPU renderer (planned)
@@ -105,7 +116,8 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-1-core-and-term.md`](plans/2026-11-24-phase-1-core-and-term.md).
 2. **Phase 2:** Runtime (game loop) and first interactive demo — see
    [`plans/2026-11-24-phase-2-runtime.md`](plans/2026-11-24-phase-2-runtime.md).
-3. **Phase 3:** `vnce-raster` — pixel canvas, CPU rasterizer, pixel modes.
+3. **Phase 3:** `vnce-raster` — pixel canvas, CPU rasterizer, pixel modes — see
+   [`plans/2026-11-24-phase-3-raster.md`](plans/2026-11-24-phase-3-raster.md).
 4. **Phase 4:** Terminal graphics protocols (Kitty, Sixel, iTerm2).
 5. **Phase 5:** `vnce-gpu` — `wgpu` renderer.
 6. **Phase 6:** `vnce-ui` — widgets.
