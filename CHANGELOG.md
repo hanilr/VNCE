@@ -54,3 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `raster` example: plasma (or a PNG given on the command line), gradient triangle,
   anti-aliased cube and ring, bouncing sprite; `M` cycles pixel modes, `D` toggles
   dithering, `--bench` prints conversion timings.
+- `PixelMode::available` lists the pixel modes expected to display correctly on the current
+  terminal; `PixelMode::detect` always returns one of them.
+- `raster` example: `M` only cycles through available modes. Octant mode showed question
+  marks because almost no font contains the Unicode 16 octant characters; it is now only
+  reachable with `Shift+M` / `--all-modes`, with a warning on the status line.

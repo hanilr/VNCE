@@ -90,29 +90,80 @@ impl PixelMode {
     /// 4. Everywhere else: [`PixelMode::HalfBlock`], which every common font supports.
     ///
     /// [`PixelMode::Octant`] and [`PixelMode::Braille`] are never chosen automatically.
+    ///
+    /// The result is always one of [`PixelMode::available`].
     #[must_use]
     pub fn detect(color_depth: ColorDepth) -> Self {
-        Self::from_env(|name| std::env::var(name).ok(), color_depth)
+        Self::from_env(|name| std::env::var(name).ok(), color_depth, cfg!(windows))
     }
 
     /// Like [`PixelMode::detect`], with a custom environment lookup (for tests).
-    pub fn from_env(env: impl Fn(&str) -> Option<String>, color_depth: ColorDepth) -> Self {
-        if let Some(mode) = env("VNCE_PIXEL_MODE").and_then(|v| v.parse().ok()) {
-            return mode;
+    ///
+    /// `windows` tells whether the program runs on Windows.
+    pub fn from_env(
+        env: impl Fn(&str) -> Option<String>,
+        color_depth: ColorDepth,
+        windows: bool,
+    ) -> Self {
+        let available = Self::available_from_env(env, color_depth, windows);
+        if let [explicit] = available[..] {
+            return explicit;
         }
-        if color_depth == ColorDepth::NoColor {
-            return Self::Ascii;
+        [Self::Sextant, Self::HalfBlock, Self::Ascii]
+            .into_iter()
+            .find(|mode| available.contains(mode))
+            .unwrap_or(Self::Ascii)
+    }
+
+    /// The modes expected to display correctly on the current terminal, best first.
+    ///
+    /// - [`PixelMode::HalfBlock`] and [`PixelMode::Quadrant`] (needs colors) and
+    ///   [`PixelMode::Ascii`]: everywhere; these characters are in practically every font.
+    /// - [`PixelMode::Sextant`]: only on terminals that draw block characters themselves
+    ///   (Kitty, `WezTerm`, foot, Ghostty), because almost no font contains them.
+    /// - [`PixelMode::Braille`]: everywhere except the classic Windows console and the Linux
+    ///   console, which have no font fallback for the Braille block.
+    /// - [`PixelMode::Octant`] (Unicode 16, 2024): never; almost no font or terminal can draw
+    ///   it yet.
+    ///
+    /// When `VNCE_PIXEL_MODE` names a mode, only that mode is returned: the user knows their
+    /// terminal can display it.
+    #[must_use]
+    pub fn available(color_depth: ColorDepth) -> Vec<Self> {
+        Self::available_from_env(|name| std::env::var(name).ok(), color_depth, cfg!(windows))
+    }
+
+    /// Like [`PixelMode::available`], with a custom environment lookup (for tests).
+    pub fn available_from_env(
+        env: impl Fn(&str) -> Option<String>,
+        color_depth: ColorDepth,
+        windows: bool,
+    ) -> Vec<Self> {
+        if let Some(mode) = env("VNCE_PIXEL_MODE").and_then(|v| v.parse().ok()) {
+            return vec![mode];
         }
         let term = env("TERM").unwrap_or_default().to_ascii_lowercase();
         let program = env("TERM_PROGRAM").unwrap_or_default().to_ascii_lowercase();
         let draws_blocks = ["kitty", "wezterm", "foot", "ghostty"]
             .iter()
             .any(|name| term.contains(name) || program.contains(name));
-        if draws_blocks {
-            Self::Sextant
-        } else {
-            Self::HalfBlock
+        let classic_windows_console =
+            windows && env("WT_SESSION").is_none() && program.is_empty() && term.is_empty();
+        let braille = !(classic_windows_console || term == "linux" || term == "dumb");
+        let colors = color_depth != ColorDepth::NoColor;
+
+        let mut modes = Vec::new();
+        if colors && draws_blocks {
+            modes.push(Self::Sextant);
         }
+        if colors {
+            modes.extend([Self::HalfBlock, Self::Quadrant]);
+        }
+        if braille {
+            modes.push(Self::Braille);
+        }
+        modes.push(Self::Ascii);
+        modes
     }
 }
 
@@ -569,6 +620,7 @@ mod tests {
                         .map(|(_, v)| (*v).to_owned())
                 },
                 depth,
+                false,
             )
         };
         let truecolor = ColorDepth::TrueColor;
@@ -597,5 +649,95 @@ mod tests {
             detect(&[("VNCE_PIXEL_MODE", "bogus")], truecolor),
             PixelMode::HalfBlock
         );
+    }
+
+    fn available(vars: &[(&str, &str)], depth: ColorDepth, windows: bool) -> Vec<PixelMode> {
+        PixelMode::available_from_env(
+            |name| {
+                vars.iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| (*v).to_owned())
+            },
+            depth,
+            windows,
+        )
+    }
+
+    #[test]
+    fn available_modes() {
+        use PixelMode::{Ascii, Braille, HalfBlock, Octant, Quadrant, Sextant};
+        let truecolor = ColorDepth::TrueColor;
+
+        // Octant is never offered automatically: almost no font has it.
+        for vars in [
+            &[][..],
+            &[("TERM", "xterm-kitty")][..],
+            &[("WT_SESSION", "x")][..],
+        ] {
+            assert!(!available(vars, truecolor, true).contains(&Octant));
+            assert!(!available(vars, truecolor, false).contains(&Octant));
+        }
+
+        // Windows Terminal: font fallback for Braille, no self-drawn sextants assumed.
+        assert_eq!(
+            available(&[("WT_SESSION", "x")], truecolor, true),
+            [HalfBlock, Quadrant, Braille, Ascii]
+        );
+        // Classic Windows console: no font fallback.
+        assert_eq!(
+            available(&[], truecolor, true),
+            [HalfBlock, Quadrant, Ascii]
+        );
+        // Linux console.
+        assert_eq!(
+            available(&[("TERM", "linux")], ColorDepth::Ansi16, false),
+            [HalfBlock, Quadrant, Ascii]
+        );
+        // Terminals that draw block characters themselves.
+        assert_eq!(
+            available(&[("TERM", "xterm-ghostty")], truecolor, false),
+            [Sextant, HalfBlock, Quadrant, Braille, Ascii]
+        );
+        // No colors: only modes that work in monochrome.
+        assert_eq!(
+            available(&[("TERM", "xterm")], ColorDepth::NoColor, false),
+            [Braille, Ascii]
+        );
+        // An explicit choice is trusted.
+        assert_eq!(
+            available(&[("VNCE_PIXEL_MODE", "octant")], truecolor, true),
+            [Octant]
+        );
+    }
+
+    #[test]
+    fn detect_always_returns_an_available_mode() {
+        let cases: [&[(&str, &str)]; 5] = [
+            &[],
+            &[("TERM", "linux")],
+            &[("TERM", "xterm-kitty")],
+            &[("WT_SESSION", "x")],
+            &[("VNCE_PIXEL_MODE", "braille")],
+        ];
+        for vars in cases {
+            for depth in [
+                ColorDepth::TrueColor,
+                ColorDepth::Ansi16,
+                ColorDepth::NoColor,
+            ] {
+                for windows in [false, true] {
+                    let mode = PixelMode::from_env(
+                        |name| {
+                            vars.iter()
+                                .find(|(k, _)| *k == name)
+                                .map(|(_, v)| (*v).to_owned())
+                        },
+                        depth,
+                        windows,
+                    );
+                    assert!(available(vars, depth, windows).contains(&mode), "{vars:?}");
+                }
+            }
+        }
     }
 }

@@ -11,6 +11,10 @@
 //! ```
 //!
 //! `M`: next pixel mode · `D`: dithering (Braille / ASCII) · `Esc` / `Q`: quit.
+//!
+//! `M` only cycles through the modes that display correctly on the current terminal
+//! (`PixelMode::available`). `Shift+M`, or starting with `--all-modes`, also includes the
+//! modes that need font support; the status line then warns about them.
 
 // Graphics demo code converts freely between pixel coordinates and floats; every value
 // stays far inside the target ranges.
@@ -28,7 +32,7 @@ use std::time::{Duration, Instant};
 use vnce::vnce_core::{Buffer, Color, Rect, Size, Style};
 use vnce::vnce_raster::{BlitOptions, Canvas, PixelMode, Quality, RenderOptions, Rgba};
 use vnce::vnce_runtime::{self, Context, Game, RunConfig, RunError};
-use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
+use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind, KeyModifiers};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,16 +40,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         bench();
         return Ok(());
     }
-    let image = match args.first() {
+    let all_modes = args.iter().any(|a| a == "--all-modes");
+    let image = match args.iter().find(|a| !a.starts_with("--")) {
         Some(path) => Some(Canvas::load_png(path)?),
         None => None,
     };
-    run(image)?;
+    run(image, all_modes)?;
     Ok(())
 }
 
-fn run(image: Option<Canvas>) -> Result<(), RunError> {
+fn run(image: Option<Canvas>, all_modes: bool) -> Result<(), RunError> {
     let mut demo = Demo::new(image);
+    demo.all_modes = all_modes;
     vnce_runtime::run(&mut demo, RunConfig::default())
 }
 
@@ -66,6 +72,10 @@ fn sprite() -> Canvas {
 
 struct Demo {
     mode: PixelMode,
+    /// Modes that display correctly on this terminal.
+    available: Vec<PixelMode>,
+    /// Cycle through every mode with `M` (`--all-modes`).
+    all_modes: bool,
     dither: bool,
     canvas: Canvas,
     image: Option<Canvas>,
@@ -80,6 +90,8 @@ impl Demo {
     fn new(image: Option<Canvas>) -> Self {
         Self {
             mode: PixelMode::HalfBlock,
+            available: vec![PixelMode::HalfBlock],
+            all_modes: false,
             dither: false,
             canvas: Canvas::new(0, 0),
             image,
@@ -90,12 +102,18 @@ impl Demo {
         }
     }
 
-    fn next_mode(&mut self) {
-        let index = PixelMode::ALL
-            .iter()
-            .position(|&m| m == self.mode)
-            .unwrap_or(0);
-        self.mode = PixelMode::ALL[(index + 1) % PixelMode::ALL.len()];
+    /// Switches to the next mode: among the available ones, or among all of them.
+    fn next_mode(&mut self, all: bool) {
+        let modes: &[PixelMode] = if all || self.all_modes {
+            &PixelMode::ALL
+        } else {
+            &self.available
+        };
+        let index = modes.iter().position(|&m| m == self.mode);
+        self.mode = match index {
+            Some(index) => modes[(index + 1) % modes.len()],
+            None => modes[0],
+        };
     }
 }
 
@@ -106,7 +124,9 @@ fn pixel_area(size: Size) -> Rect {
 
 impl Game for Demo {
     fn init(&mut self, ctx: &mut Context) {
-        self.mode = PixelMode::detect(ctx.capabilities().color_depth);
+        let color_depth = ctx.capabilities().color_depth;
+        self.mode = PixelMode::detect(color_depth);
+        self.available = PixelMode::available(color_depth);
     }
 
     fn event(&mut self, ctx: &mut Context, event: &Event) {
@@ -118,7 +138,9 @@ impl Game for Demo {
         }
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => ctx.quit(),
-            KeyCode::Char('m' | 'M') => self.next_mode(),
+            // Shift+M arrives as `M`, or as `m` with SHIFT when keyboard enhancement is on.
+            KeyCode::Char('M') => self.next_mode(true),
+            KeyCode::Char('m') => self.next_mode(key.modifiers.contains(KeyModifiers::SHIFT)),
             KeyCode::Char('d' | 'D') => self.dither = !self.dither,
             _ => {}
         }
@@ -171,8 +193,13 @@ impl Game for Demo {
         self.canvas.render(buffer, area, self.mode, &options);
         self.convert_time = start.elapsed();
 
+        let warning = if self.available.contains(&self.mode) {
+            ""
+        } else {
+            " (needs font support)"
+        };
         let status = format!(
-            " {} ({columns}×{rows}) · {width}×{height} px · convert {:.2} ms · FPS {:.0} · dither {} · M: mode · D: dither · Esc: quit",
+            " {}{warning} ({columns}×{rows}) · {width}×{height} px · convert {:.2} ms · FPS {:.0} · dither {} · M: mode · Shift+M: all modes · D: dither · Esc: quit",
             self.mode,
             self.convert_time.as_secs_f64() * 1000.0,
             ctx.fps(),

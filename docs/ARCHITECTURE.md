@@ -72,7 +72,9 @@ are drawn as a space with a background color, so they never depend on the font.
 `PixelMode::detect` is compatible with every device: `Ascii` without color support,
 `Sextant` only on terminals that draw block glyphs themselves (Kitty, WezTerm, foot,
 Ghostty), `HalfBlock` everywhere else. `Octant` and `Braille` are opt-in.
-`VNCE_PIXEL_MODE` overrides the choice.
+`VNCE_PIXEL_MODE` overrides the choice. `PixelMode::available` lists the modes expected to
+display correctly on the current terminal (Octant is never listed automatically: as of 2026
+almost no font contains the Unicode 16 octant characters).
 
 The block tables are generated from the Unicode character database by
 `tools/gen-block-tables`.
