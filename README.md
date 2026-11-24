@@ -5,8 +5,8 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 4: core types, terminal layer, game loop, pixel
-> graphics and terminal graphics protocols). The API is not stable yet.
+> **Status:** early development (Phase 5: core types, terminal layer, game loop, pixel
+> graphics, terminal graphics protocols and GPU rendering). The API is not stable yet.
 
 ## Usage
 
@@ -41,6 +41,12 @@ For real pixels, call `frame.draw_image(area, &canvas)`: it uses the Kitty, Sixe
 graphics protocol when the terminal supports one (detected automatically) and falls back
 to cells everywhere else.
 
+For GPU rendering, enable the `gpu` feature (`vnce = { version = "0.1",
+features = ["gpu"] }`): `vnce_gpu` renders with `wgpu` (Vulkan, DX12, Metal or OpenGL, with a
+software fallback) into a `RenderTarget` that is read back into a canvas and shown like any
+other image. It comes with a full-screen shader helper (`ShaderQuad`) and a 3D mesh renderer
+(`MeshRenderer`); your own `wgpu` render passes work too.
+
 Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
@@ -50,6 +56,8 @@ cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dither
 cargo run --release --example raster -- image.png   # show a PNG image
 cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method
 cargo run --release --example image -- photo.png
+cargo run --release --features gpu --example gpu_shader   # GPU raymarching; G: method
+cargo run --release --features gpu --example gpu_cube     # GPU 3D cubes; M: anti-aliasing
 ```
 
 Environment overrides:
@@ -57,6 +65,8 @@ Environment overrides:
 - `VNCE_COLOR_DEPTH`: `truecolor`, `256`, `16` or `none`.
 - `VNCE_PIXEL_MODE`: `halfblock`, `quadrant`, `sextant`, `octant`, `braille` or `ascii`.
 - `VNCE_GRAPHICS`: `kitty`, `sixel`, `iterm2`, `cells` or a pixel mode name.
+- `VNCE_GPU_BACKEND`: `vulkan`, `dx12`, `metal` or `gl` (comma-separated list).
+- `VNCE_GPU_POWER`: `high` (fastest GPU, default) or `low` (most power-efficient GPU).
 
 ## Building
 
@@ -65,7 +75,7 @@ Requires Rust 1.87 or newer.
 ```sh
 cargo build
 cargo test
-cargo clippy --all-targets
+cargo clippy --all-targets --all-features
 cargo fmt --all --check
 ```
 
@@ -78,6 +88,7 @@ cargo fmt --all --check
 | `crates/vnce-term/`        | Terminal layer (`vnce_term`).               |
 | `crates/vnce-runtime/`     | Game loop and input state (`vnce_runtime`). |
 | `crates/vnce-raster/`      | Pixel canvas and pixel modes (`vnce_raster`). |
+| `crates/vnce-gpu/`         | GPU rendering with `wgpu` (`vnce_gpu`).     |
 | `tools/gen-block-tables/`       | Generates block-character tables.         |
 | `docs/ARCHITECTURE.md`          | High-level design.                        |
 | `docs/plans/`                   | Approved implementation plans.            |

@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   letters, mouse) and a deterministic `ScriptedDriver` for tests.
 - `stars` example: a small game with held-key movement, interpolation, a fading trail and
   live FPS limit changes.
+- `vnce-gpu` (`vnce_gpu`, feature `gpu` of `vnce`): GPU rendering with `wgpu` 30.
+  `Gpu` connects to a hardware adapter with a software fallback (WARP, llvmpipe);
+  `VNCE_GPU_BACKEND` and `VNCE_GPU_POWER` overrides. `RenderTarget` renders offscreen in sRGB
+  and reads back into a `Canvas`, immediately or pipelined. `ShaderQuad` turns one WGSL
+  `shade` function into a full-screen shader (errors with line numbers); `MeshRenderer`
+  draws colored meshes with depth testing and MSAA; `Mat4` for transforms and cameras.
+- `Frame::image_pixel_size`, `Frame::image_pixel_aspect` and `Frame::cell_pixels`: the
+  exact pixel size and pixel shape an image is shown with, for rendering at the right
+  resolution.
+- `gpu_shader` (raymarched scene) and `gpu_cube` (3D cubes with anti-aliasing) examples
+  with `--bench` timings.
 
 ### Fixed
 

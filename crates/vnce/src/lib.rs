@@ -18,3 +18,8 @@ pub use vnce_runtime;
 
 /// Pixel graphics: canvas, blending, drawing primitives and pixel-to-cell conversion.
 pub use vnce_raster;
+
+/// GPU rendering with `wgpu`: render targets read back into canvases, full-screen shaders
+/// and meshes. Requires the `gpu` feature.
+#[cfg(feature = "gpu")]
+pub use vnce_gpu;

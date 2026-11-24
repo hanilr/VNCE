@@ -955,6 +955,7 @@ name = "vnce"
 version = "0.1.0"
 dependencies = [
  "vnce-core",
+ "vnce-gpu",
  "vnce-raster",
  "vnce-runtime",
  "vnce-term",

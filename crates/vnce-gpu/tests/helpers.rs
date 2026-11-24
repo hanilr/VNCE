@@ -107,3 +107,25 @@ fn mesh_renderer_draws_with_depth_and_antialiasing() {
         assert_close(canvas.get(2, 2).unwrap(), background);
     }
 }
+
+#[test]
+fn shader_quad_reports_the_real_aspect_ratio() {
+    let Some(gpu) = gpu() else { return };
+    let mut shader = ShaderQuad::new(
+        &gpu,
+        "fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
+            return vec4<f32>(globals.aspect * 0.5, globals.pixel_aspect, 0.0, 1.0);
+        }",
+    )
+    .unwrap();
+    // 8×4 pixels that are half as wide as high: the image is square.
+    shader.set_pixel_aspect(0.5);
+    shader.set_pixel_aspect(-1.0);
+    assert!((shader.pixel_aspect() - 0.5).abs() < f32::EPSILON);
+    let mut target = RenderTarget::new(&gpu, 8, 4);
+    shader.render(&gpu, &target, 0.0, 0);
+    let mut canvas = Canvas::new(0, 0);
+    target.read_into(&gpu, &mut canvas).unwrap();
+    // Linear 0.5 is sRGB 188.
+    assert_close(canvas.get(0, 0).unwrap(), Rgba::rgb(188, 188, 0));
+}

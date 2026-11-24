@@ -173,6 +173,25 @@ impl Frame<'_> {
         )
     }
 
+    /// Width divided by height of one pixel of [`Frame::image_pixel_size`] on the screen.
+    ///
+    /// Graphics protocols have square pixels (1.0); cell modes usually do not (a quadrant
+    /// pixel is half a cell wide and half a cell high, so about 1:2). Multiply the aspect
+    /// ratio of an image size in pixels by this value to get its real aspect ratio, for
+    /// example for a camera.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss, reason = "cell sizes are small")]
+    pub fn image_pixel_aspect(&self) -> f32 {
+        match self.graphics {
+            GraphicsMode::Cells(mode) => {
+                let (columns, rows) = mode.cell_size();
+                let (width, height) = self.cell_pixels;
+                (f32::from(width) / columns as f32) / (f32::from(height) / rows as f32)
+            }
+            GraphicsMode::Protocol(_) => 1.0,
+        }
+    }
+
     /// Size of one cell in pixels, as in [`Terminal::cell_pixels`].
     ///
     /// Useful to compute the real aspect ratio of an area, for example for a camera:
@@ -1172,9 +1191,20 @@ mod tests {
                         assert_eq!(f.cell_pixels(), (10, 20));
                         assert_eq!(f.image_pixel_size(area), expected, "{mode}");
                         assert_eq!(f.image_pixel_size(Rect::new(20, 0, 2, 2)), (0, 0));
+                        // Cells of 10×20 pixels: half blocks and octants have square
+                        // pixels, like graphics protocols (quadrants are tested below).
+                        assert!((f.image_pixel_aspect() - 1.0).abs() < 1e-6, "{mode}");
                     })
                     .unwrap();
             }
+        }
+
+        #[test]
+        fn quadrant_pixels_are_twice_as_high_as_wide() {
+            let mut terminal = with_mode(GraphicsMode::Cells(PixelMode::Quadrant), 4, 4);
+            terminal
+                .draw(|f| assert!((f.image_pixel_aspect() - 0.5).abs() < 1e-6))
+                .unwrap();
         }
 
         #[test]

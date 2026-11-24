@@ -26,7 +26,7 @@ The engine is **cross-platform** and targets:
 | `vnce-term`       | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images. | Phase 1, 4 |
 | `vnce-runtime`    | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.   | Phase 2 |
 | `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Phase 3 |
-| `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering and readback.                         | Planned |
+| `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.   | Phase 5 |
 | `vnce-ui`         | `vnce_ui`      | A small set of widgets for games and graphics applications.      | Planned |
 | `vnce` | `vnce`  | Public facade; re-exports the crates above behind feature flags. | Phase 1 |
 
@@ -103,10 +103,24 @@ circles, triangles with a top-left fill rule and per-vertex gradients, sprite bl
 `Replace` / `Alpha` / `Add` / `Multiply` blending, clipping and PNG loading.
 Optional parallelism may be added later.
 
-### GPU renderer (planned)
+### GPU renderer
 
-`wgpu` (Vulkan / DX12 / Metal). Frames are rendered offscreen, read back to the CPU and
+`wgpu` (Vulkan / DX12 / Metal / OpenGL). Frames are rendered offscreen, read back to the CPU and
 converted through the same pixel modes. Enabled with a `gpu` feature flag.
+
+- `Gpu::new` prefers a hardware adapter (high performance by default), then a software
+  adapter (WARP on Windows, llvmpipe on Linux), else returns `GpuError::NoAdapter` so the
+  program can render on the CPU. `VNCE_GPU_BACKEND` and `VNCE_GPU_POWER` override the choice.
+- `RenderTarget`: an `Rgba8UnormSrgb` texture (shaders write linear colors, canvases get
+  sRGB). `read_into` copies it into a `Canvas`, either immediately or pipelined over two
+  buffers (one frame of latency, the CPU never waits for the GPU).
+- `Frame::image_pixel_size(area)` gives the exact pixel size an image is shown at in the
+  current graphics mode, and `Frame::image_pixel_aspect()` the shape of those pixels, so
+  the GPU renders exactly the pixels that are shown, with the right aspect ratio.
+- Helpers: `ShaderQuad` (a full-screen shader from one WGSL `shade` function, validated
+  with `naga` for readable errors) and `MeshRenderer` (colored meshes with a depth buffer
+  and MSAA, lowered to what the adapter supports), with a small `Mat4` type. Users can
+  also write their own `wgpu` passes; the `wgpu` crate is re-exported.
 
 ### Runtime
 
@@ -139,7 +153,8 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-3-raster.md`](plans/2026-11-24-phase-3-raster.md).
 4. **Phase 4:** Terminal graphics protocols (Kitty, Sixel, iTerm2) — see
    [`plans/2026-11-24-phase-4-graphics-protocols.md`](plans/2026-11-24-phase-4-graphics-protocols.md).
-5. **Phase 5:** `vnce-gpu` — `wgpu` renderer.
+5. **Phase 5:** `vnce-gpu` — `wgpu` renderer — see
+   [`plans/2026-11-24-phase-5-gpu.md`](plans/2026-11-24-phase-5-gpu.md).
 6. **Phase 6:** `vnce-ui` — widgets.
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

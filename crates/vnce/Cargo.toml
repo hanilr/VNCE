@@ -22,3 +22,16 @@ vnce-core.workspace = true
 vnce-term.workspace = true
 vnce-runtime.workspace = true
 vnce-raster = { workspace = true, features = ["png"] }
+vnce-gpu = { workspace = true, optional = true }
+
+[features]
+# GPU rendering with wgpu (`vnce::vnce_gpu`). Off by default: wgpu is a large dependency.
+gpu = ["dep:vnce-gpu"]
+
+[[example]]
+name = "gpu_shader"
+required-features = ["gpu"]
+
+[[example]]
+name = "gpu_cube"
+required-features = ["gpu"]

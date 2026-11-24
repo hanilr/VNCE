@@ -11,6 +11,8 @@ struct VnceGlobals {
     resolution: vec2<f32>,
     time: f32,
     frame: u32,
+    pixel_aspect: f32,
+    aspect: f32,
 }
 
 @group(0) @binding(0) var<uniform> globals: VnceGlobals;
@@ -35,6 +37,10 @@ struct Globals {
     resolution: [f32; 2],
     time: f32,
     frame: u32,
+    pixel_aspect: f32,
+    aspect: f32,
+    // Uniform buffers are sized in steps of 16 bytes.
+    padding: [f32; 2],
 }
 
 /// The complete WGSL module for a user `shade` function.
@@ -74,6 +80,10 @@ pub(crate) fn validate(source: &str) -> Result<(), GpuError> {
 ///   target in pixels.
 /// - The result is a linear color; the target stores it as sRGB.
 /// - `globals.frame` holds the frame number passed to [`ShaderQuad::render`].
+/// - `globals.pixel_aspect` is the width / height of one pixel on the screen (see
+///   [`ShaderQuad::set_pixel_aspect`]) and `globals.aspect` the real width / height of the
+///   whole image: use it to keep circles round in cell modes, for example
+///   `(uv - 0.5) * vec2<f32>(globals.aspect, 1.0)`.
 ///
 /// Helper functions, constants and structs may be defined next to `shade`. Names starting
 /// with `vnce_` / `Vnce` and the name `globals` are reserved.
@@ -82,6 +92,7 @@ pub struct ShaderQuad {
     pipeline: wgpu::RenderPipeline,
     uniforms: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    pixel_aspect: f32,
 }
 
 impl ShaderQuad {
@@ -160,7 +171,22 @@ impl ShaderQuad {
             pipeline,
             uniforms,
             bind_group,
+            pixel_aspect: 1.0,
         })
+    }
+
+    /// Sets the width / height of one pixel on the screen (1.0 by default), for example
+    /// from `Frame::image_pixel_aspect`. Non-positive values are ignored.
+    pub fn set_pixel_aspect(&mut self, pixel_aspect: f32) {
+        if pixel_aspect > 0.0 && pixel_aspect.is_finite() {
+            self.pixel_aspect = pixel_aspect;
+        }
+    }
+
+    /// The width / height of one pixel on the screen.
+    #[must_use]
+    pub fn pixel_aspect(&self) -> f32 {
+        self.pixel_aspect
     }
 
     /// Runs the shader for every pixel of `target`.
@@ -170,6 +196,9 @@ impl ShaderQuad {
             resolution: [target.width() as f32, target.height() as f32],
             time,
             frame,
+            pixel_aspect: self.pixel_aspect,
+            aspect: target.aspect() * self.pixel_aspect,
+            padding: [0.0; 2],
         };
         gpu.queue()
             .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&globals));
@@ -208,7 +237,7 @@ mod tests {
     fn a_valid_shade_function_compiles() {
         let source = "fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
     let pixel = uv * resolution;
-    return vec4<f32>(fract(pixel.x / 8.0), uv.y, sin(time) + f32(globals.frame), 1.0);
+    return vec4<f32>(fract(pixel.x / 8.0), uv.y * globals.aspect, sin(time) + f32(globals.frame), globals.pixel_aspect);
 }";
         validate(&wrap_source(source)).unwrap();
     }
