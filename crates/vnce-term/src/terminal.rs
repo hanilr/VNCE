@@ -87,6 +87,7 @@ pub struct Frame<'a> {
     buffer: &'a mut Buffer,
     count: u64,
     graphics: GraphicsMode,
+    cell_pixels: (u16, u16),
     images: &'a mut Vec<ImageRequest>,
     placed: &'a [PlacedImage],
 }
@@ -99,7 +100,7 @@ impl Frame<'_> {
     /// terminal would scroll), and text drawn under an image is hidden by it. Images that
     /// do not change are not sent again.
     pub fn draw_image(&mut self, area: Rect, canvas: &Canvas) {
-        let mut area = area.intersection(self.buffer.area());
+        let area = self.image_area(area);
         match self.graphics {
             GraphicsMode::Cells(mode) => {
                 if area.is_empty() || canvas.width() == 0 || canvas.height() == 0 {
@@ -112,11 +113,7 @@ impl Frame<'_> {
                 );
                 scaled.render(self.buffer, area, mode, &RenderOptions::default());
             }
-            GraphicsMode::Protocol(protocol) => {
-                if protocol != GraphicsProtocol::Kitty {
-                    let last_row = self.buffer.size().height.saturating_sub(1);
-                    area.height = area.height.min(last_row.saturating_sub(area.y));
-                }
+            GraphicsMode::Protocol(_) => {
                 if area.is_empty() || canvas.width() == 0 || canvas.height() == 0 {
                     return;
                 }
@@ -140,6 +137,49 @@ impl Frame<'_> {
     #[must_use]
     pub fn graphics_mode(&self) -> GraphicsMode {
         self.graphics
+    }
+
+    /// The part of `area` that [`Frame::draw_image`] actually covers: inside the terminal
+    /// and, with Sixel and iTerm2, above the last row.
+    fn image_area(&self, area: Rect) -> Rect {
+        let mut area = area.intersection(self.buffer.area());
+        if let GraphicsMode::Protocol(protocol) = self.graphics {
+            if protocol != GraphicsProtocol::Kitty {
+                let last_row = self.buffer.size().height.saturating_sub(1);
+                area.height = area.height.min(last_row.saturating_sub(area.y));
+            }
+        }
+        area
+    }
+
+    /// The size in pixels at which an image drawn in `area` with [`Frame::draw_image`] is
+    /// shown without any scaling: the pixels of the pixel mode for cells, the pixels of the
+    /// cells (see [`Frame::cell_pixels`]) for graphics protocols.
+    ///
+    /// Rendering at this size (for example on the GPU) gives the sharpest image for the
+    /// least work. Returns `(0, 0)` when nothing would be drawn.
+    #[must_use]
+    pub fn image_pixel_size(&self, area: Rect) -> (u32, u32) {
+        let area = self.image_area(area);
+        let (columns, rows) = match self.graphics {
+            GraphicsMode::Cells(mode) => mode.cell_size(),
+            GraphicsMode::Protocol(_) => {
+                (u32::from(self.cell_pixels.0), u32::from(self.cell_pixels.1))
+            }
+        };
+        (
+            u32::from(area.width) * columns,
+            u32::from(area.height) * rows,
+        )
+    }
+
+    /// Size of one cell in pixels, as in [`Terminal::cell_pixels`].
+    ///
+    /// Useful to compute the real aspect ratio of an area, for example for a camera:
+    /// `width * cell_width / (height * cell_height)`.
+    #[must_use]
+    pub fn cell_pixels(&self) -> (u16, u16) {
+        self.cell_pixels
     }
 
     /// The drawable area (the whole terminal).
@@ -366,10 +406,12 @@ impl<B: Backend> Terminal<B> {
     {
         self.autoresize()?;
         self.images.requests.clear();
+        let cell_pixels = self.cell_pixels();
         let mut frame = Frame {
             buffer: &mut self.buffers[self.current],
             count: self.frame_count,
             graphics: self.graphics,
+            cell_pixels,
             images: &mut self.images.requests,
             placed: &self.images.placed,
         };
@@ -1108,6 +1150,31 @@ mod tests {
                 .draw(|f| f.draw_image(Rect::new(0, 1, 2, 5), &image(Rgba::WHITE)))
                 .unwrap();
             assert!(sequences(&mut terminal)[0].contains(",c=2,r=2,"));
+        }
+
+        #[test]
+        fn image_pixel_size_matches_the_drawn_size() {
+            let area = Rect::new(0, 1, 4, 5);
+            let cases = [
+                // Half blocks: 1×2 pixels per cell, clipped to the 3 rows of the terminal.
+                (GraphicsMode::Cells(PixelMode::HalfBlock), (4, 4)),
+                (GraphicsMode::Cells(PixelMode::Octant), (8, 8)),
+                // Fallback cells of 10×20 pixels; Kitty may use the last row.
+                (KITTY, (40, 40)),
+                // Sixel and iTerm2 stop above the last row.
+                (SIXEL, (40, 20)),
+                (ITERM2, (40, 20)),
+            ];
+            for (mode, expected) in cases {
+                let mut terminal = with_mode(mode, 10, 3);
+                terminal
+                    .draw(|f| {
+                        assert_eq!(f.cell_pixels(), (10, 20));
+                        assert_eq!(f.image_pixel_size(area), expected, "{mode}");
+                        assert_eq!(f.image_pixel_size(Rect::new(20, 0, 2, 2)), (0, 0));
+                    })
+                    .unwrap();
+            }
         }
 
         #[test]

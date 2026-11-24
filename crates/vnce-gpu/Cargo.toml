@@ -1,0 +1,24 @@
+[package]
+name = "vnce-gpu"
+description = "GPU rendering with wgpu for the Variation CLI Engine: offscreen render targets read back into pixel canvases."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["terminal", "graphics", "gpu", "wgpu", "rendering"]
+categories = ["command-line-interface", "graphics", "rendering"]
+
+[lib]
+name = "vnce_gpu"
+
+[lints]
+workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+pollster.workspace = true
+vnce-raster.workspace = true
+wgpu.workspace = true
+
