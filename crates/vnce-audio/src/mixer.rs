@@ -142,6 +142,12 @@ impl Mixer {
         self.voices.iter().any(|v| v.id == id)
     }
 
+    /// The ids of the sounds playing.
+    #[cfg(feature = "output")]
+    pub(crate) fn voice_ids(&self) -> impl Iterator<Item = VoiceId> + '_ {
+        self.voices.iter().map(|v| v.id)
+    }
+
     /// Reserves the id of the next sound (used by the audio output to answer `play` at
     /// once, before the audio thread starts the sound).
     pub(crate) fn reserve_id(&mut self) -> VoiceId {
