@@ -39,6 +39,6 @@ and volume settings, sound and music with `--features audio`.
 - Text inside the pixel world (score, titles) is not possible yet without a bitmap font;
   Lantern uses the status line and widgets instead.
 - The best score is kept only while the game runs (no save file yet).
-- Key rebinding is not in the settings screen yet (only the volumes); planned with the
-  save file helper so bindings can be stored.
+- Key rebinding is not in the settings screen yet (volumes, frame rate and display method
+  are); planned with the save file helper so bindings can be stored.
 - Cosmetic: the floor tile pattern repeats visibly as a grid.

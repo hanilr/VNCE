@@ -30,7 +30,7 @@ use vnce::vnce_game::{
     SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Rgba};
-use vnce::vnce_runtime::{self, Context, RunConfig};
+use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
 use vnce::vnce_term::{Frame, GraphicsMode, KeyCode};
 use vnce::vnce_ui::{
     Alignment, Block, BorderType, Clear, Line, List, ListState, Paragraph, StatefulWidget, Widget,
@@ -711,15 +711,27 @@ impl Settings {
     }
 }
 
+/// Settings rows: music, effects, frame rate, display method, back.
+const SETTINGS_ROWS: usize = 5;
+
+/// Frame rate limits offered in the settings, in order.
+const FRAME_RATES: [FpsLimit; 5] = [
+    FpsLimit::Fixed(30),
+    FpsLimit::Fixed(60),
+    FpsLimit::Fixed(90),
+    FpsLimit::Fixed(120),
+    FpsLimit::Unlimited,
+];
+
 impl Scene<Shared> for Settings {
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
         let input = ctx.input();
         let controls = &shared.controls;
         if controls.was_pressed(Action::Up, input) {
-            self.menu.select_previous(3, true);
+            self.menu.select_previous(SETTINGS_ROWS, true);
         }
         if controls.was_pressed(Action::Down, input) {
-            self.menu.select_next(3, true);
+            self.menu.select_next(SETTINGS_ROWS, true);
         }
         let step = if controls.was_pressed(Action::Left, input) {
             -10
@@ -743,15 +755,41 @@ impl Scene<Shared> for Settings {
             }
         }
         let back = controls.was_pressed(Action::Back, input)
-            || (controls.was_pressed(Action::Confirm, input) && self.menu.selected() == Some(2));
+            || (controls.was_pressed(Action::Confirm, input) && self.menu.selected() == Some(4));
+        if step != 0 {
+            let direction = step.signum();
+            match self.menu.selected() {
+                Some(2) => {
+                    let current = FRAME_RATES
+                        .iter()
+                        .position(|&rate| rate == ctx.fps_limit())
+                        .unwrap_or(1) as i32;
+                    let next = (current + direction).rem_euclid(FRAME_RATES.len() as i32);
+                    // Every offered rate is valid.
+                    let _ = ctx.set_fps_limit(FRAME_RATES[next as usize]);
+                    shared.sounds.play(Sfx::Blip);
+                }
+                Some(3) if !shared.modes.is_empty() => {
+                    let modes = &shared.modes;
+                    let current = modes
+                        .iter()
+                        .position(|&mode| mode == ctx.graphics_mode())
+                        .unwrap_or(0) as i32;
+                    let next = (current + direction).rem_euclid(modes.len() as i32);
+                    ctx.set_graphics_mode(modes[next as usize]);
+                    shared.sounds.play(Sfx::Blip);
+                }
+                _ => {}
+            }
+        }
         if back {
             return Transition::Pop;
         }
         Transition::None
     }
 
-    fn render(&mut self, shared: &Shared, _ctx: &Context, frame: &mut Frame<'_>) {
-        let area = frame.area().centered(40, 9);
+    fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
+        let area = frame.area().centered(44, 11);
         let bar = |value: u32| {
             let filled = (value / 10) as usize;
             format!(
@@ -763,12 +801,17 @@ impl Scene<Shared> for Settings {
         let items = [
             format!("Music    {}", bar(shared.music_volume)),
             format!("Effects  {}", bar(shared.effects_volume)),
+            match ctx.fps_limit() {
+                FpsLimit::Fixed(rate) => format!("Frames   ◀ {rate} fps ▶"),
+                FpsLimit::Unlimited => "Frames   ◀ unlimited ▶".to_owned(),
+            },
+            format!("Display  ◀ {} ▶", ctx.graphics_mode()),
             "Back".to_owned(),
         ];
         let note = if shared.sounds.available() {
-            " ←→: change "
+            " ←→: change · Esc: back "
         } else {
-            " sound: --features audio "
+            " ←→: change · sound: --features audio "
         };
         let buffer = frame.buffer_mut();
         Clear.render(area, buffer);
