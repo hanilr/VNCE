@@ -119,7 +119,7 @@ impl<'a> Paragraph<'a> {
     }
 }
 
-fn grapheme_width(grapheme: &str) -> u16 {
+pub(crate) fn grapheme_width(grapheme: &str) -> u16 {
     u16::try_from(grapheme.width()).unwrap_or(u16::MAX)
 }
 
@@ -219,7 +219,7 @@ fn wrap<'t>(
 }
 
 /// Cuts a row to `width` columns, ending it with `…` when something was cut.
-fn truncate(row: &mut Vec<(&str, Style)>, width: u16) {
+pub(crate) fn truncate(row: &mut Vec<(&str, Style)>, width: u16) {
     let total: u16 = row
         .iter()
         .fold(0, |sum, (g, _)| sum.saturating_add(grapheme_width(g)));

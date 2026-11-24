@@ -6,6 +6,10 @@
 //! - [`Span`], [`Line`] and [`Text`]: styled text; [`Paragraph`] draws it aligned,
 //!   wrapped, truncated with `…` or scrolled.
 //! - [`Block`]: borders (plain, rounded, double, thick or ASCII), titles and padding.
+//! - [`Gauge`]: a progress bar with 1/8-cell precision.
+//! - [`List`] with [`ListState`]: selectable rows for menus.
+//! - [`FpsOverlay`]: FPS, UPS, frame time and a sparkline in a corner, for debugging.
+//! - [`Clear`]: resets an area, for example under a popup.
 //!
 //! Widgets implement [`Widget`] (or [`StatefulWidget`] when they keep state between
 //! frames) and draw into a [`vnce_core::Buffer`], usually `frame.buffer_mut()`, so they mix
@@ -15,13 +19,19 @@
 //! This crate is part of the **Variation** ecosystem.
 
 pub mod block;
+pub mod gauge;
 pub mod layout;
+pub mod list;
+pub mod overlay;
 pub mod paragraph;
 pub mod text;
 mod widget;
 
 pub use block::{Block, BorderType, Borders, Padding};
+pub use gauge::Gauge;
 pub use layout::{Constraint, Direction, Layout};
+pub use list::{List, ListState};
+pub use overlay::{Clear, Corner, FpsOverlay};
 pub use paragraph::Paragraph;
 pub use text::{Alignment, Line, Span, Text};
 pub use widget::{StatefulWidget, Widget};
