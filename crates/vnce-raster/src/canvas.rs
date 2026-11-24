@@ -325,14 +325,16 @@ impl Canvas {
         }
         let x_axis = Axis::new(self.width, width);
         let y_axis = Axis::new(self.height, height);
+        // The source columns of each destination column are the same on every row: computed
+        // once instead of once per pixel.
+        let all_columns: Vec<Vec<(u32, f32)>> = (0..width).map(|x| x_axis.taps(x)).collect();
         for y in 0..height {
             let rows = y_axis.taps(y);
-            for x in 0..width {
-                let columns = x_axis.taps(x);
+            for (x, columns) in (0..width).zip(&all_columns) {
                 let mut sum = [0.0f32; 4];
                 let mut total = 0.0;
                 for &(sy, wy) in &rows {
-                    for &(sx, wx) in &columns {
+                    for &(sx, wx) in columns {
                         let weight = wx * wy;
                         let p = self.pixels[offset(self.width, sx, sy)];
                         let alpha = f32::from(p.a) / 255.0;
