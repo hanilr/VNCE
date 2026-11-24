@@ -87,7 +87,8 @@ impl Capabilities {
         let term_program = var("TERM_PROGRAM");
         let windows_terminal = var("WT_SESSION").is_some();
 
-        let color_depth = if let Some(depth) = var("VNCE_COLOR_DEPTH").and_then(|v| parse_depth(&v)) {
+        let color_depth = if let Some(depth) = var("VNCE_COLOR_DEPTH").and_then(|v| parse_depth(&v))
+        {
             depth
         } else if var("NO_COLOR").is_some() {
             ColorDepth::NoColor
