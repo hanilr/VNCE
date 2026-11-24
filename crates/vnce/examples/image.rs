@@ -164,13 +164,8 @@ fn measure(
             sixel::encode(&scaled, options, &mut out);
         }
         GraphicsProtocol::Iterm2 => {
-            vnce::vnce_raster::protocol::iterm2::encode(
-                image,
-                area.width,
-                area.height,
-                &mut out,
-            )
-            .ok()?;
+            vnce::vnce_raster::protocol::iterm2::encode(image, area.width, area.height, &mut out)
+                .ok()?;
         }
     }
     Some((start.elapsed(), out.len()))

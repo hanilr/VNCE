@@ -20,17 +20,18 @@ The engine is **cross-platform** and targets:
 
 ## Crates
 
-| Package                | Import name  | Responsibility                                                   | Status  |
-| ---------------------- | ------------ | ---------------------------------------------------------------- | ------- |
-| `vnce-core`       | `vnce_core`    | Geometry, color, style, cell and buffer types.                   | Phase 1 |
-| `vnce-term`       | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images. | Phase 1, 4 |
-| `vnce-runtime`    | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.   | Phase 2 |
-| `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Phase 3 |
-| `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.   | Phase 5 |
-| `vnce-ui`         | `vnce_ui`      | A small set of widgets for games and graphics applications.      | Phase 6 |
-| `vnce` | `vnce`  | Public facade; re-exports the crates above behind feature flags. | Phase 1 |
+| Package        | Import name    | Responsibility                                                      | Status     |
+| -------------- | -------------- | ------------------------------------------------------------------- | ---------- |
+| `vnce-core`    | `vnce_core`    | Geometry, color, style, cell and buffer types.                      | Phase 1    |
+| `vnce-term`    | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images. | Phase 1, 4 |
+| `vnce-runtime` | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.      | Phase 2    |
+| `vnce-raster`  | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.                  | Phase 3    |
+| `vnce-gpu`     | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.      | Phase 5    |
+| `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.         | Phase 6    |
+| `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.    | Phase 1    |
 
-Package names use the `vnce-` prefix to avoid collisions on crates.io.
+Package names use the `vnce-` prefix (`vnce` is short for Variation CLI Engine); every crate
+is imported with the matching `vnce_` name.
 
 ## Design decisions
 
@@ -73,15 +74,15 @@ never touch the last row, which would scroll the screen.
 
 ### Pixel modes
 
-| Mode                   | Pixels per cell | Color                          | Status  |
-| ---------------------- | --------------- | ------------------------------ | ------- |
-| Half-block `▀`         | 1×2             | Each pixel has its own color   | Phase 3 |
-| Quadrant               | 2×2             | Two colors per cell            | Phase 3 |
-| Sextant (Unicode 13)   | 2×3             | Two colors per cell            | Phase 3 |
-| Octant (Unicode 16)    | 2×4             | Two colors per cell            | Phase 3 |
-| Braille                | 2×4             | Dot color + background         | Phase 3 |
-| ASCII ramp             | 1×2             | Works without color support    | Phase 3 |
-| Kitty / Sixel / iTerm2 | Real pixels     | Full color                     | Phase 4 |
+| Mode                   | Pixels per cell | Color                        | Status  |
+| ---------------------- | --------------- | ---------------------------- | ------- |
+| Half-block `▀`         | 1×2             | Each pixel has its own color | Phase 3 |
+| Quadrant               | 2×2             | Two colors per cell          | Phase 3 |
+| Sextant (Unicode 13)   | 2×3             | Two colors per cell          | Phase 3 |
+| Octant (Unicode 16)    | 2×4             | Two colors per cell          | Phase 3 |
+| Braille                | 2×4             | Dot color + background       | Phase 3 |
+| ASCII ramp             | 1×2             | Works without color support  | Phase 3 |
+| Kitty / Sixel / iTerm2 | Real pixels     | Full color                   | Phase 4 |
 
 For two-color modes the best foreground/background pair is chosen per cell. Uniform cells
 are drawn as a space with a background color, so they never depend on the font.

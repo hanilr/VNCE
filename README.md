@@ -1,4 +1,4 @@
-# Variation CLI Engine
+# Variation CLI Engine (vnce)
 
 `vnce` is a Rust library for building graphics, animations and games that run in the
 terminal, rendered on the **CPU** or the **GPU**.
@@ -77,11 +77,11 @@ Environment overrides:
 
 ## Supported platforms
 
-| Platform | Terminals                                                     | GPU backends         |
-| -------- | ------------------------------------------------------------- | -------------------- |
-| Windows  | Windows Terminal, classic console (conhost)                   | DX12, Vulkan, OpenGL |
+| Platform | Terminals                                                       | GPU backends         |
+| -------- | --------------------------------------------------------------- | -------------------- |
+| Windows  | Windows Terminal, classic console (conhost)                     | DX12, Vulkan, OpenGL |
 | Linux    | Kitty, WezTerm, foot, Ghostty, Alacritty, GNOME, Konsole, xterm | Vulkan, OpenGL       |
-| macOS    | Terminal.app, iTerm2, Kitty, WezTerm, Ghostty                 | Metal                |
+| macOS    | Terminal.app, iTerm2, Kitty, WezTerm, Ghostty                   | Metal                |
 
 Every feature falls back gracefully: cells instead of graphics protocols, half blocks or
 ASCII instead of finer pixel modes, 256 or 16 colors instead of truecolor, and a software
@@ -103,19 +103,19 @@ Releases are described in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Project layout
 
-| Path                            | Contents                                  |
-| ------------------------------- | ----------------------------------------- |
-| `crates/vnce/`  | The main library crate (`vnce`).     |
-| `crates/vnce-core/`        | Core types (`vnce_core`).                   |
-| `crates/vnce-term/`        | Terminal layer (`vnce_term`).               |
-| `crates/vnce-runtime/`     | Game loop and input state (`vnce_runtime`). |
-| `crates/vnce-raster/`      | Pixel canvas and pixel modes (`vnce_raster`). |
-| `crates/vnce-gpu/`         | GPU rendering with `wgpu` (`vnce_gpu`).     |
-| `crates/vnce-ui/`          | Widgets (`vnce_ui`).                        |
-| `tools/gen-block-tables/`       | Generates block-character tables.         |
-| `docs/ARCHITECTURE.md`          | High-level design.                        |
-| `docs/plans/`                   | Approved implementation plans.            |
-| `CHANGELOG.md`                  | Release history.                          |
+| Path                      | Contents                                      |
+| ------------------------- | --------------------------------------------- |
+| `crates/vnce/`            | The main library crate (`vnce`).              |
+| `crates/vnce-core/`       | Core types (`vnce_core`).                     |
+| `crates/vnce-term/`       | Terminal layer (`vnce_term`).                 |
+| `crates/vnce-runtime/`    | Game loop and input state (`vnce_runtime`).   |
+| `crates/vnce-raster/`     | Pixel canvas and pixel modes (`vnce_raster`). |
+| `crates/vnce-gpu/`        | GPU rendering with `wgpu` (`vnce_gpu`).       |
+| `crates/vnce-ui/`         | Widgets (`vnce_ui`).                          |
+| `tools/gen-block-tables/` | Generates block-character tables.             |
+| `docs/ARCHITECTURE.md`    | High-level design.                            |
+| `docs/plans/`             | Approved implementation plans.                |
+| `CHANGELOG.md`            | Release history.                              |
 
 ## License and attribution
 
