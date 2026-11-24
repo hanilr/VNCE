@@ -1,0 +1,36 @@
+# --- Rust / Cargo ---
+# Build output
+/target/
+**/target/
+# rustfmt backup files
+**/*.rs.bk
+# MSVC debug symbols
+*.pdb
+# Profiling / coverage output
+*.profraw
+*.profdata
+/coverage/
+flamegraph.svg
+perf.data*
+
+# --- AI agent files (local only, not part of the project) ---
+AGENTS.md
+CLAUDE.md
+.claude/settings.local.json
+
+# --- Environment / secrets ---
+.env
+.env.*
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,20 @@
+[package]
+name = "vnce"
+description = "A Rust library for building graphics and games in the terminal using the CPU and GPU. Part of the Variation ecosystem."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["terminal", "graphics", "game-engine", "tui", "gpu"]
+categories = ["command-line-interface", "game-engines", "graphics", "rendering"]
+
+[lib]
+# Users import the crate as `vnce`.
+name = "vnce"
+
+[lints]
+workspace = true
+
+[dependencies]
