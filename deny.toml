@@ -1,0 +1,36 @@
+# Configuration for cargo-deny (https://embarkstudios.github.io/cargo-deny/), run in CI.
+
+[graph]
+# Check the dependencies of every feature, including `gpu`.
+all-features = true
+
+[advisories]
+# Every security advisory and unmaintained warning fails the check unless listed here
+# with a reason.
+ignore = []
+
+[licenses]
+# Licenses compatible with Apache-2.0 that dependencies may use.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Several versions of one crate only warn: wgpu and crossterm pull in some on purpose.
+multiple-versions = "warn"
+wildcards = "deny"
+# Internal path dependencies also carry a version, so they are not wildcards.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
