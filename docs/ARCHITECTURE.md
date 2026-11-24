@@ -23,7 +23,7 @@ The engine is **cross-platform** and targets:
 | Package                | Import name  | Responsibility                                                   | Status  |
 | ---------------------- | ------------ | ---------------------------------------------------------------- | ------- |
 | `vnce-core`       | `vnce_core`    | Geometry, color, style, cell and buffer types.                   | Phase 1 |
-| `vnce-term`       | `vnce_term`    | Terminal output, double-buffered rendering, input, capabilities. | Phase 1 |
+| `vnce-term`       | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images. | Phase 1, 4 |
 | `vnce-runtime`    | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.   | Phase 2 |
 | `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Phase 3 |
 | `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering and readback.                         | Planned |
@@ -43,6 +43,23 @@ Package names use the `vnce-` prefix to avoid collisions on crates.io.
   `Event`, `KeyCode`, `KeyModifiers`, `MouseEvent` types, so the backend can be replaced later.
 - The terminal is always restored (raw mode off, main screen, visible cursor), both on
   `Drop` and from a panic hook.
+- **Terminal queries** (`vnce_term::query`): when entering, one write asks for XTVERSION,
+  Kitty graphics / keyboard support, cell and window size in pixels, Sixel limits and DA1
+  (last; every terminal answers it). Answers are read raw before the event loop starts
+  (`rustix` on Unix, `windows-sys` on Windows) and exposed as `Terminal::info()`.
+
+### Graphics protocols
+
+`Frame::draw_image(area, &canvas)` shows an image with the terminal's `GraphicsMode`:
+
+- `Protocol(Kitty | Sixel | Iterm2)`: real pixels. Detection order Kitty → Sixel → iTerm2
+  from the query answers; tmux / screen use cells; `VNCE_GRAPHICS` overrides.
+- `Cells(PixelMode)`: everywhere else.
+
+The terminal tracks the images on screen: unchanged images are not resent, Kitty images
+that are gone are deleted, cells of removed Sixel / iTerm2 images are redrawn and the cells
+under unchanged ones are not rewritten (that would erase the image). Sixel / iTerm2 images
+never touch the last row, which would scroll the screen.
 
 ### Rendering model
 
@@ -64,7 +81,7 @@ Package names use the `vnce-` prefix to avoid collisions on crates.io.
 | Octant (Unicode 16)    | 2×4             | Two colors per cell            | Phase 3 |
 | Braille                | 2×4             | Dot color + background         | Phase 3 |
 | ASCII ramp             | 1×2             | Works without color support    | Phase 3 |
-| Kitty / Sixel / iTerm2 | Real pixels     | Full color                     | Planned |
+| Kitty / Sixel / iTerm2 | Real pixels     | Full color                     | Phase 4 |
 
 For two-color modes the best foreground/background pair is chosen per cell. Uniform cells
 are drawn as a space with a background color, so they never depend on the font.
@@ -120,7 +137,8 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-2-runtime.md`](plans/2026-11-24-phase-2-runtime.md).
 3. **Phase 3:** `vnce-raster` — pixel canvas, CPU rasterizer, pixel modes — see
    [`plans/2026-11-24-phase-3-raster.md`](plans/2026-11-24-phase-3-raster.md).
-4. **Phase 4:** Terminal graphics protocols (Kitty, Sixel, iTerm2).
+4. **Phase 4:** Terminal graphics protocols (Kitty, Sixel, iTerm2) — see
+   [`plans/2026-11-24-phase-4-graphics-protocols.md`](plans/2026-11-24-phase-4-graphics-protocols.md).
 5. **Phase 5:** `vnce-gpu` — `wgpu` renderer.
 6. **Phase 6:** `vnce-ui` — widgets.
 

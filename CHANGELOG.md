@@ -80,3 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `TestBackend` no longer loops forever on escape sequences other than CSI.
+- `image` example: shows a PNG (or a generated test image) with the best method; `G` cycles
+  through Kitty / Sixel / iTerm2 / cell modes; the status line shows the terminal, its
+  protocol support, the cell size and the encoding time and size.

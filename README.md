@@ -5,8 +5,8 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 3: core types, terminal layer, game loop and pixel
-> graphics). The API is not stable yet.
+> **Status:** early development (Phase 4: core types, terminal layer, game loop, pixel
+> graphics and terminal graphics protocols). The API is not stable yet.
 
 ## Usage
 
@@ -37,6 +37,10 @@ For pixel graphics, draw on a `vnce_raster::Canvas` (lines, shapes, triangles, s
 images) and convert it into cells with `canvas.render(buffer, area, mode, &options)`.
 `PixelMode::detect` picks a mode that works on the current terminal.
 
+For real pixels, call `frame.draw_image(area, &canvas)`: it uses the Kitty, Sixel or iTerm2
+graphics protocol when the terminal supports one (detected automatically) and falls back
+to cells everywhere else.
+
 Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
@@ -44,12 +48,15 @@ cargo run --example hello             # styles, colors, Unicode, input events
 cargo run --example stars             # a small game: arrows/WASD, +/- to change the FPS
 cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
 cargo run --release --example raster -- image.png   # show a PNG image
+cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method
+cargo run --release --example image -- photo.png
 ```
 
 Environment overrides:
 
 - `VNCE_COLOR_DEPTH`: `truecolor`, `256`, `16` or `none`.
 - `VNCE_PIXEL_MODE`: `halfblock`, `quadrant`, `sextant`, `octant`, `braille` or `ascii`.
+- `VNCE_GRAPHICS`: `kitty`, `sixel`, `iterm2`, `cells` or a pixel mode name.
 
 ## Building
 

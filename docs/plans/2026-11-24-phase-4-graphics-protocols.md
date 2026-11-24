@@ -77,3 +77,22 @@ Both are already in the dependency tree through `crossterm`.
   changing images; games should use cells or Kitty.
 - No Kitty compression in the first version.
 - tmux / screen need passthrough wrapping; not supported yet, cells are used instead.
+
+## Implementation notes
+
+- The queries run inside `Backend::enter` (the backend owns raw input), and the backend
+  enables keyboard enhancement from the answer; `Terminal` reads the result with
+  `Backend::terminal_info`. `TerminalOptions::query_terminal` turns the queries off.
+- Verified on a real Windows console: the DA1 answer arrives in about 1 ms and is parsed
+  correctly (no Sixel there, so cells are used).
+- Images are encoded in `vnce_raster::protocol` (no terminal dependency); `vnce_term` now
+  depends on `vnce_raster`. Its `png` feature (default) enables iTerm2.
+- Kitty placements use `z=0` (above text) and `C=1` (the cursor does not move).
+- Sixel images are scaled to the exact pixel size of their area; the cell size comes from
+  `CSI 16 t`, else the window size divided by the cell count, else 10×20.
+- `Canvas::scaled` was added (bilinear enlarging, area-averaging shrinking,
+  premultiplied alpha).
+- `TestBackend` records graphics sequences instead of printing them; this also fixed an
+  endless loop on escape sequences other than CSI.
+- The runtime exposes `Context::terminal_info`, `Context::graphics_mode` and
+  `Context::set_graphics_mode`.
