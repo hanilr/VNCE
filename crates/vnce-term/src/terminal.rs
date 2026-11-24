@@ -737,10 +737,14 @@ impl ImageState {
                 }
                 // The image in this area changed: send only what changed when possible.
                 (Some(mut placed), Some(canvas)) => {
-                    let update = can_update
-                        .then(|| changed_parts(protocol, &placed, &canvas, cell_pixels))
-                        .flatten();
+                    // Scaling is costly: the image as drawn is made once, for the comparison
+                    // and for sending.
                     let shown = sixel_shown(protocol, &canvas, request.area, cell_pixels);
+                    let update = can_update
+                        .then(|| {
+                            changed_parts(protocol, &placed, &canvas, shown.as_ref(), cell_pixels)
+                        })
+                        .flatten();
                     placed.hash = request.hash;
                     placed.canvas = canvas;
                     placed.shown = shown;
@@ -993,6 +997,7 @@ fn changed_parts(
     protocol: GraphicsProtocol,
     placed: &PlacedImage,
     canvas: &Canvas,
+    shown: Option<&Canvas>,
     cell_pixels: (u16, u16),
 ) -> Option<Change> {
     let area = placed.area;
@@ -1022,11 +1027,11 @@ fn changed_parts(
         }
         GraphicsProtocol::Sixel => {
             let old = placed.shown.as_ref()?;
-            let new = sixel_shown(protocol, canvas, area, cell_pixels)?;
+            let new = shown?;
             if (old.width(), old.height()) != (new.width(), new.height()) {
                 return None;
             }
-            patches(&changed_cells(old, &new, area, cell_pixels), area)
+            patches(&changed_cells(old, new, area, cell_pixels), area)
         }
         GraphicsProtocol::Iterm2 => {
             if !exact_cells(canvas, area, cell_pixels)
