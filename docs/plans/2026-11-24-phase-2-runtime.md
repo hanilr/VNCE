@@ -74,3 +74,15 @@ score, FPS / UPS and key mode. `+` / `-` change the FPS limit live, `P` pauses, 
   this problem.
 - Sleep precision on Windows is about 1 ms; interpolation hides the jitter.
 - Single-threaded, no async.
+
+## Implementation notes
+
+- With the kitty keyboard protocol, character keys arrive as the base key plus modifiers
+  (`Shift+=` is `Char('=')` with `SHIFT`), because alternate keys are not requested. This
+  keeps presses and releases of the same physical key consistent.
+- `Context::set_fps_limit`, `Context::set_update_rate` and `Context::set_key_hold_timeout`
+  change settings at run time; invalid values are rejected.
+- `Driver` is also implemented for `&mut D`, so a `ScriptedDriver` can be inspected after
+  `run_with` returns.
+- The `stars` demo avoids ambiguous-width glyphs for game objects (`@`, `*`, colored
+  background cells for the trail) so it renders the same in every terminal and locale.

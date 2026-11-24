@@ -33,3 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time), spiral-of-death protection, interpolation `alpha`, measured FPS / UPS, pause,
   `InputState` (held keys with release events or a timeout fallback, case-insensitive
   letters, mouse) and a deterministic `ScriptedDriver` for tests.
+- `stars` example: a small game with held-key movement, interpolation, a fading trail and
+  live FPS limit changes.
+
+### Fixed
+
+- `hello` example: frames are paced by the clock; input events (for example mouse
+  movement) no longer trigger extra frames and speed up the animation.

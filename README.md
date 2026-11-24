@@ -5,7 +5,7 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 1: core types and terminal layer). The API is not
+> **Status:** early development (Phase 2: core types, terminal layer and game loop). The API is not
 > stable yet.
 
 ## Usage
@@ -30,10 +30,14 @@ fn main() -> std::io::Result<()> {
 }
 ```
 
-Run the bundled example (press `q` to quit):
+For games, implement `vnce_runtime::Game` and call `vnce_runtime::run`: updates run at a fixed
+rate, frames at a configurable limit, and `ctx.input()` tells which keys are held down.
+
+Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
-cargo run --example hello
+cargo run --example hello   # styles, colors, Unicode, input events
+cargo run --example stars   # a small game: move with arrows/WASD, +/- to change the FPS
 ```
 
 Set `VNCE_COLOR_DEPTH` to `truecolor`, `256`, `16` or `none` to override color detection.
@@ -56,6 +60,7 @@ cargo fmt --all --check
 | `crates/vnce/`  | The main library crate (`vnce`).     |
 | `crates/vnce-core/`        | Core types (`vnce_core`).                   |
 | `crates/vnce-term/`        | Terminal layer (`vnce_term`).               |
+| `crates/vnce-runtime/`     | Game loop and input state (`vnce_runtime`). |
 | `docs/ARCHITECTURE.md`          | High-level design.                        |
 | `docs/plans/`                   | Approved implementation plans.            |
 | `CHANGELOG.md`                  | Release history.                          |

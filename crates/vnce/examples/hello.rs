@@ -10,7 +10,7 @@
 //! Press `q`, `Esc` or `Ctrl+C` to quit.
 
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use vnce::vnce_core::{Cell, Color, Rect, Style};
 use vnce::vnce_term::input::{self, Event, KeyCode, KeyModifiers};
@@ -27,18 +27,22 @@ fn main() -> io::Result<()> {
     })?;
     let color_depth = terminal.capabilities().color_depth;
     let mut last_event = String::from("(none yet)");
+    let mut next_frame = Instant::now();
 
     loop {
         terminal.draw(|frame| render(frame, &format!("{color_depth:?}"), &last_event))?;
 
-        if let Some(event) = input::poll(FRAME_TIME)? {
+        // Frames follow the clock, not the input: every event that arrives before the next
+        // frame is handled, but none of them triggers an extra frame. (Previously each
+        // event caused a redraw, so moving the mouse sped up the animation.)
+        next_frame = (next_frame + FRAME_TIME).max(Instant::now());
+        while let Some(event) = input::poll(next_frame.saturating_duration_since(Instant::now()))? {
             if is_quit(&event) {
-                break;
+                return Ok(());
             }
             last_event = format!("{event:?}");
         }
     }
-    Ok(())
 }
 
 /// `q`, `Esc` or `Ctrl+C`, on key press only (Windows also reports key releases).

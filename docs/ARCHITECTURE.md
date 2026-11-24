@@ -24,6 +24,7 @@ The engine is **cross-platform** and targets:
 | ---------------------- | ------------ | ---------------------------------------------------------------- | ------- |
 | `vnce-core`       | `vnce_core`    | Geometry, color, style, cell and buffer types.                   | Phase 1 |
 | `vnce-term`       | `vnce_term`    | Terminal output, double-buffered rendering, input, capabilities. | Phase 1 |
+| `vnce-runtime`    | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.   | Phase 2 |
 | `vnce-raster`     | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.               | Planned |
 | `vnce-gpu`        | `vnce_gpu`     | `wgpu` offscreen rendering and readback.                         | Planned |
 | `vnce-ui`         | `vnce_ui`      | A small set of widgets for games and graphics applications.      | Planned |
@@ -77,9 +78,20 @@ Optional parallelism may be added later.
 `wgpu` (Vulkan / DX12 / Metal). Frames are rendered offscreen, read back to the CPU and
 converted through the same pixel modes. Enabled with a `gpu` feature flag.
 
-### Runtime (planned)
+### Runtime
 
-A game loop with a fixed timestep, frame pacing and input dispatch.
+A game loop with a fixed timestep, frame pacing and input dispatch:
+
+- `Game::update` runs at a fixed rate (1–1000 Hz, default 60); `Game::render` runs at the
+  frame limit (`FpsLimit::Fixed(1..=1000)` or `Unlimited`, default 60). Both can be
+  changed while the game runs.
+- Frames follow the clock, never the input: events are handled while waiting for the next
+  frame and cannot trigger extra frames.
+- Frame time is clamped to avoid the spiral of death; `render` gets an interpolation
+  factor (`alpha`).
+- `InputState` tracks held keys. Terminals that report key releases (Windows, or the
+  kitty keyboard protocol) give exact releases; elsewhere a timeout is used.
+- A `Driver` trait (clock + events) makes runs deterministic in tests (`ScriptedDriver`).
 
 ### Widgets (planned)
 
@@ -91,7 +103,8 @@ an `FpsOverlay` for debugging.
 
 1. **Phase 1:** `vnce-core` + `vnce-term` — see
    [`plans/2026-11-24-phase-1-core-and-term.md`](plans/2026-11-24-phase-1-core-and-term.md).
-2. **Phase 2:** Runtime (game loop) and first interactive demo.
+2. **Phase 2:** Runtime (game loop) and first interactive demo — see
+   [`plans/2026-11-24-phase-2-runtime.md`](plans/2026-11-24-phase-2-runtime.md).
 3. **Phase 3:** `vnce-raster` — pixel canvas, CPU rasterizer, pixel modes.
 4. **Phase 4:** Terminal graphics protocols (Kitty, Sixel, iTerm2).
 5. **Phase 5:** `vnce-gpu` — `wgpu` renderer.
