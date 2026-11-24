@@ -12,3 +12,6 @@ pub use vnce_core;
 
 /// Terminal output, double-buffered rendering and terminal backends.
 pub use vnce_term;
+
+/// The game loop: fixed-timestep updates, frame limiting, input state and the `Game` trait.
+pub use vnce_runtime;

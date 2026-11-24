@@ -28,3 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TerminalOptions::keyboard_enhancement` and `Capabilities::key_release_events`: the kitty
   keyboard protocol is enabled where supported so key releases are reported (always
   available on Windows); it is popped again on restore and on panic.
+- `vnce-runtime` (`vnce_runtime`): `Game` trait and `run` with fixed-timestep updates,
+  configurable frame limit (`FpsLimit::Fixed(1..=1000)` or `Unlimited`, changeable at run
+  time), spiral-of-death protection, interpolation `alpha`, measured FPS / UPS, pause,
+  `InputState` (held keys with release events or a timeout fallback, case-insensitive
+  letters, mouse) and a deterministic `ScriptedDriver` for tests.

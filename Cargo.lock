@@ -209,6 +209,7 @@ name = "vnce"
 version = "0.1.0"
 dependencies = [
  "vnce-core",
+ "vnce-runtime",
  "vnce-term",
 ]
 
@@ -218,6 +219,14 @@ version = "0.1.0"
 dependencies = [
  "unicode-segmentation",
  "unicode-width",
+]
+
+[[package]]
+name = "vnce-runtime"
+version = "0.1.0"
+dependencies = [
+ "vnce-core",
+ "vnce-term",
 ]
 
 [[package]]

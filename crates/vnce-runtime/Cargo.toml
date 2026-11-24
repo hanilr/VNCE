@@ -1,0 +1,21 @@
+[package]
+name = "vnce-runtime"
+description = "Fixed-timestep game loop, input state and Game trait for the Variation CLI Engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["terminal", "game-loop", "game-engine", "input", "tui"]
+categories = ["command-line-interface", "game-engines"]
+
+[lib]
+name = "vnce_runtime"
+
+[lints]
+workspace = true
+
+[dependencies]
+vnce-core.workspace = true
+vnce-term.workspace = true

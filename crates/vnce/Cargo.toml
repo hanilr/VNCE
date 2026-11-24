@@ -20,3 +20,4 @@ workspace = true
 [dependencies]
 vnce-core.workspace = true
 vnce-term.workspace = true
+vnce-runtime.workspace = true
