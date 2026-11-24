@@ -112,6 +112,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `note` and `Melody` for tunes.
 - `platformer` plays generated sound effects and music with `--features audio`; `sfx`
   example: pick, tweak, hear, see and save sound effects.
+- Faster graphics protocols: Kitty images as compressed PNG (`kitty::Options`,
+  `transmit_and_place_with`), Sixel encoding about 17 times faster with a palette kept
+  across frames (`sixel::Encoder`), and only the changed parts of images sent again
+  (Sixel and iTerm2 patches, Kitty tiles).
+- Graphics inside tmux and zellij: Sixel when the multiplexer draws it, Kitty in tmux
+  through passthrough with Unicode placeholders (`vnce_term::tmux`,
+  `kitty::transmit_virtual`, `kitty::placeholder`, `Terminal::set_tmux_passthrough`).
 
 ### Changed
 
@@ -127,3 +134,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TestBackend` no longer loops forever on escape sequences other than CSI.
 - Terminal queries: an unterminated APC, DCS or OSC answer (or a broken CSI) no longer
   hides the answers after it; an `ESC` inside a sequence cancels it, as in xterm.
+- The raster robustness tests build without the `png` feature.

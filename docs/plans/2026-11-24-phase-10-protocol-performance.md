@@ -70,3 +70,34 @@ Kitty is fast to encode but sends far too much; Sixel is small but slow to encod
   passthrough path is unit-tested and needs a try on Linux or macOS.
 - Tiles are only used when the image matches its cell resolution exactly, so tile edges
   never show seams.
+
+## Implementation notes
+
+- Kitty compression was measured before choosing: on a 720p gradient, raw RGBA is 4.8 MB,
+  zlib level 1 1.45 MB in 10.5 ms, PNG with `png::Compression::Fast` (fdeflate) 581 KB in
+  4.5 ms; on a game-like frame PNG is 18 KB in about 1 ms. PNG (`f=100`) became the
+  default, zlib (`o=z`) the fallback without the `png` feature.
+- Sixel: most of the old time went into writing bands (every color of a band scanned the
+  whole width six times). Bands are now built in one pass; the palette comes from a 5-5-5
+  histogram (exact colors when there are few enough, with a slower exact path only when
+  close colors share a bin) and pixels map through a 32 768-entry table. 720p: 271 ms →
+  15 ms, same output size. Parallel output is byte-identical to single-threaded output
+  (tested).
+- Partial updates compare images at cell level. Sixel compares the images as drawn
+  (scaled to the cells) and cuts patches from them, so patches never show seams. Changed
+  Kitty images keep their ids: freed, then sent again inside the synchronized update.
+- tmux: the query adds the Kitty query and a DA1 wrapped for passthrough and reads until
+  two DA1 answers arrived; only the first (tmux's) decides Sixel. Kitty commands are
+  wrapped right before writing (`tmux::wrap_kitty`), so every Kitty path is covered,
+  including deletes after switching modes. Placeholders are written into the cell buffer
+  on every frame and only reach the terminal when they change.
+- Checked in WSL Ubuntu with tmux 3.6 (already installed, nothing was installed): tmux
+  answers DA1 with `?1;2;4` (Sixel), `allow-passthrough` is off by default, and
+  placeholders with their diacritics are kept, one column each. Kitty itself cannot be
+  seen here (Windows Terminal has no Kitty protocol).
+- The Kitty row/column diacritics come from Kitty's `rowcolumn-diacritics.txt` (297 code
+  points); a test checks they are distinct and zero-width.
+- Measured with a sprite moving over a 1600 × 880 picture on a `TestBackend`: Sixel
+  8.7 ms and Kitty 7.1 ms per frame, about 5 KB each.
+- Raw ESC bytes that crept into a few test literals during editing were turned back into
+  `\x1b` escapes.

@@ -41,6 +41,10 @@ images) and convert it into cells with `canvas.render(buffer, area, mode, &optio
 For real pixels, call `frame.draw_image(area, &canvas)`: it uses the Kitty, Sixel or iTerm2
 graphics protocol when the terminal supports one (detected automatically) and falls back
 to cells everywhere else.
+Only the parts of an image that changed are sent again, so moving sprites stay cheap. Inside
+tmux, Sixel works when tmux draws it (tmux 3.4 or newer built with Sixel), and Kitty
+images work with `set -g allow-passthrough on` in the tmux configuration; without it,
+starting takes about 300 ms longer while the query waits for the outer terminal.
 
 For GPU rendering, enable the `gpu` feature (`vnce = { version = "0.1",
 features = ["gpu"] }`): `vnce_gpu` renders with `wgpu` (Vulkan, DX12, Metal or OpenGL, with a

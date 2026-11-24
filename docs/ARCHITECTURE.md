@@ -56,13 +56,29 @@ is imported with the matching `vnce_` name.
 `Frame::draw_image(area, &canvas)` shows an image with the terminal's `GraphicsMode`:
 
 - `Protocol(Kitty | Sixel | Iterm2)`: real pixels. Detection order Kitty → Sixel → iTerm2
-  from the query answers; tmux / screen use cells; `VNCE_GRAPHICS` overrides.
+  from the query answers; `VNCE_GRAPHICS` overrides. GNU screen uses cells; tmux and
+  zellij use Sixel when they report it; Kitty works inside tmux through passthrough with
+  Unicode placeholders (`U=1` virtual placements, the image id in the foreground color),
+  which tmux moves like text.
 - `Cells(PixelMode)`: everywhere else.
 
 The terminal tracks the images on screen: unchanged images are not resent, Kitty images
 that are gone are deleted, cells of removed Sixel / iTerm2 images are redrawn and the cells
 under unchanged ones are not rewritten (that would erase the image). Sixel / iTerm2 images
 never touch the last row, which would scroll the screen.
+
+Speed (a 720p frame on the development machine):
+
+- Kitty images are sent as PNG with the fast `fdeflate` encoder (RGB when opaque): 581 KB
+  in 4.5 ms for a gradient instead of 4.8 MB of raw RGBA; zlib without the `png` feature.
+- Sixel: a 5-5-5 histogram palette, a lookup table for mapping, bands built in one pass and
+  encoded on several threads: 15 ms instead of 271 ms. `sixel::Encoder` keeps the palette
+  while the colors stay, so animation does not flicker.
+- An image redrawn in the same area is compared with the one on the screen at cell level:
+  Sixel (and iTerm2 at exact cell resolution) send patches for the changed rows of cells
+  (whole images beyond 70 %); Kitty images at exact cell resolution are split into up to
+  8 × 8 tiles and only changed tiles are sent. A sprite moving over a 1600 × 880 picture
+  costs about 5 KB per frame.
 
 ### Rendering model
 

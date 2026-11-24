@@ -150,7 +150,7 @@ fn measure(
                 rows: area.height,
                 z_index: 0,
             };
-            kitty::transmit_and_place(image, placement, &mut out);
+            kitty::transmit_and_place_with(image, placement, kitty::Options::default(), &mut out);
         }
         GraphicsProtocol::Sixel => {
             let scaled = image.scaled(
