@@ -181,7 +181,9 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-4-graphics-protocols.md`](plans/2026-11-24-phase-4-graphics-protocols.md).
 5. **Phase 5:** `vnce-gpu` — `wgpu` renderer — see
    [`plans/2026-11-24-phase-5-gpu.md`](plans/2026-11-24-phase-5-gpu.md).
-. **Phase 7:** CI and release readiness — see
+6. **Phase 6:** `vnce-ui` — widgets — see
+   [`plans/2026-11-24-phase-6-ui.md`](plans/2026-11-24-phase-6-ui.md).
+7. **Phase 7:** CI and release readiness — see
    [`plans/2026-11-24-phase-7-ci-and-release.md`](plans/2026-11-24-phase-7-ci-and-release.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.
