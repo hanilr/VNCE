@@ -109,15 +109,35 @@ impl Canvas {
     ///
     /// Returns an error if the canvas is empty or too large for PNG.
     pub fn to_png(&self) -> Result<Vec<u8>, ImageError> {
+        self.encode_png(false, png::Compression::default())
+    }
+
+    /// Encodes the canvas as PNG quickly, for sending to a terminal: RGB when every pixel
+    /// is opaque, and fast compression (a few milliseconds for a 720p frame).
+    pub(crate) fn to_png_fast(&self) -> Result<Vec<u8>, ImageError> {
+        let opaque = self.pixels().iter().all(|p| p.a == 255);
+        self.encode_png(opaque, png::Compression::Fast)
+    }
+
+    fn encode_png(&self, rgb: bool, compression: png::Compression) -> Result<Vec<u8>, ImageError> {
         let mut bytes = Vec::new();
         {
             let mut encoder = png::Encoder::new(&mut bytes, self.width(), self.height());
-            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_color(if rgb {
+                png::ColorType::Rgb
+            } else {
+                png::ColorType::Rgba
+            });
             encoder.set_depth(png::BitDepth::Eight);
+            encoder.set_compression(compression);
             let mut writer = encoder.write_header().map_err(encoding_error)?;
-            let mut data = Vec::with_capacity(self.pixels().len() * 4);
+            let mut data = Vec::with_capacity(self.pixels().len() * if rgb { 3 } else { 4 });
             for p in self.pixels() {
-                data.extend_from_slice(&[p.r, p.g, p.b, p.a]);
+                if rgb {
+                    data.extend_from_slice(&[p.r, p.g, p.b]);
+                } else {
+                    data.extend_from_slice(&[p.r, p.g, p.b, p.a]);
+                }
             }
             writer.write_image_data(&data).map_err(encoding_error)?;
             writer.finish().map_err(encoding_error)?;

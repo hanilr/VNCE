@@ -697,7 +697,12 @@ fn write_image(
                 rows: area.height,
                 z_index: 0,
             };
-            protocol::kitty::transmit_and_place(&image.canvas, placement, out);
+            protocol::kitty::transmit_and_place_with(
+                &image.canvas,
+                placement,
+                protocol::kitty::Options::default(),
+                out,
+            );
         }
         GraphicsProtocol::Sixel => {
             // Sixel draws pixels 1:1, so the image is scaled to the exact size of its area.
@@ -1073,7 +1078,7 @@ mod tests {
             let sent = sequences(&mut terminal);
             assert_eq!(sent.len(), 1);
             assert!(
-                sent[0].starts_with("\x1b_Ga=T,f=32,s=4,v=4,i=1,c=3,r=2,"),
+                sent[0].starts_with("\x1b_Ga=T,f=100,i=1,c=3,r=2,"),
                 "{sent:?}"
             );
             // The image is placed at the top-left cell of its area.

@@ -11,7 +11,9 @@
 )]
 
 use vnce_core::{Buffer, Cell, Rect, Size};
-use vnce_raster::protocol::{base64, iterm2, kitty, sixel};
+#[cfg(feature = "png")]
+use vnce_raster::protocol::iterm2;
+use vnce_raster::protocol::{base64, kitty, sixel};
 use vnce_raster::{BlendMode, BlitOptions, Canvas, PixelMode, Quality, RenderOptions, Rgba};
 
 /// A small deterministic random generator (xorshift64*), so failures can be reproduced.
@@ -262,6 +264,7 @@ fn sixel_output_is_well_formed() {
     }
 }
 
+#[cfg(feature = "png")]
 #[test]
 fn iterm2_output_is_well_formed() {
     let mut rng = Rng::new(47);

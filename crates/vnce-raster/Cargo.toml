@@ -24,6 +24,7 @@ default = ["png"]
 png = ["dep:png"]
 
 [dependencies]
+miniz_oxide.workspace = true
 png = { workspace = true, optional = true }
 vnce-core.workspace = true
 

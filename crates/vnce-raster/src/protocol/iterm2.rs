@@ -20,7 +20,7 @@ pub fn encode(
     rows: u16,
     out: &mut Vec<u8>,
 ) -> Result<(), ImageError> {
-    let png = canvas.to_png()?;
+    let png = canvas.to_png_fast()?;
     let _ = write!(
         out,
         "\x1b]1337;File=inline=1;size={};width={columns};height={rows};preserveAspectRatio=0:",
