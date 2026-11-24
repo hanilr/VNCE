@@ -16,8 +16,14 @@ name = "vnce_term"
 [lints]
 workspace = true
 
+[features]
+default = ["png"]
+# iTerm2 inline images (they are sent as PNG).
+png = ["vnce-raster/png"]
+
 [dependencies]
 crossterm.workspace = true
+vnce-raster.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 vnce-core.workspace = true

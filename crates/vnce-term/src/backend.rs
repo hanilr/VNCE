@@ -307,6 +307,7 @@ pub struct TestBackend {
     query_answer: Vec<u8>,
     queries: Vec<Vec<u8>>,
     info: TerminalInfo,
+    graphics: Vec<Vec<u8>>,
 }
 
 impl TestBackend {
@@ -326,6 +327,7 @@ impl TestBackend {
             query_answer: Vec::new(),
             queries: Vec::new(),
             info: TerminalInfo::default(),
+            graphics: Vec::new(),
         }
     }
 
@@ -343,6 +345,18 @@ impl TestBackend {
     #[must_use]
     pub fn queries(&self) -> &[Vec<u8>] {
         &self.queries
+    }
+
+    /// Graphics sequences received so far (Kitty APC, Sixel DCS, iTerm2 OSC), in order.
+    /// They are not printed on the emulated screen.
+    #[must_use]
+    pub fn graphics_sequences(&self) -> &[Vec<u8>] {
+        &self.graphics
+    }
+
+    /// Forgets the recorded graphics sequences.
+    pub fn clear_graphics_sequences(&mut self) {
+        self.graphics.clear();
     }
 
     /// Changes the reported terminal size, like a window resize. The screen is cleared.
@@ -403,6 +417,26 @@ impl TestBackend {
                 let final_char = chars.next();
                 self.control_sequence(params, final_char);
                 rest = chars.as_str();
+            } else if let Some(after) = ["\x1b_", "\x1bP", "\x1b]"]
+                .iter()
+                .find_map(|prefix| rest.strip_prefix(prefix))
+            {
+                // String sequences (Kitty APC, Sixel DCS, iTerm2 OSC) end with ST or BEL.
+                // They are recorded, not printed.
+                let end = [
+                    after.find("\x1b\\").map(|i| i + 2),
+                    after.find('\x07').map(|i| i + 1),
+                ]
+                .into_iter()
+                .flatten()
+                .min()
+                .unwrap_or(after.len());
+                let length = rest.len() - after.len() + end;
+                self.graphics.push(rest.as_bytes()[..length].to_vec());
+                rest = &rest[length..];
+            } else if let Some(after) = rest.strip_prefix('\x1b') {
+                // Any other escape: skip the ESC so the loop always makes progress.
+                rest = after;
             } else {
                 let end = rest.find('\x1b').unwrap_or(rest.len());
                 let (printable, remaining) = rest.split_at(end);

@@ -69,3 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Floyd–Steinberg dithering, run-length encoding, transparency) and iTerm2 (inline PNG).
   `Canvas::scaled` (bilinear / area averaging with premultiplied alpha) and
   `Canvas::to_png`.
+- Images in frames: `Frame::draw_image(area, &canvas)` shows real pixels with Kitty, Sixel
+  or iTerm2, or cells with a pixel mode. `GraphicsMode::detect` picks Kitty → Sixel →
+  iTerm2 → cells from the terminal's answers (`VNCE_GRAPHICS` override; tmux / screen use
+  cells). Unchanged images are not sent again, text under Sixel / iTerm2 images is not
+  rewritten, removed images are deleted or their cells redrawn, and Sixel / iTerm2 images
+  never touch the last row. `Context::terminal_info`, `Context::graphics_mode` and
+  `Context::set_graphics_mode` in the runtime.
+
+### Fixed
+
+- `TestBackend` no longer loops forever on escape sequences other than CSI.

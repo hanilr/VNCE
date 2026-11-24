@@ -82,7 +82,13 @@ where
     D: Driver,
 {
     config.validate()?;
-    let mut ctx = Context::new(&config, terminal.capabilities(), terminal.size());
+    let mut ctx = Context::new(
+        &config,
+        terminal.capabilities(),
+        terminal.size(),
+        terminal.info().clone(),
+        terminal.graphics_mode(),
+    );
     ctx.set_capabilities(terminal.capabilities());
     game.init(&mut ctx);
 
@@ -128,6 +134,10 @@ where
             (accumulator.as_secs_f32() / ctx.update_interval().as_secs_f32()).clamp(0.0, 1.0);
 
         // 3. Draw.
+        if let Some(mode) = ctx.graphics_request.take() {
+            terminal.set_graphics_mode(mode);
+            ctx.graphics_mode = terminal.graphics_mode();
+        }
         terminal.autoresize()?;
         ctx.size = terminal.size();
         terminal.draw(|frame| game.render(&ctx, frame))?;

@@ -322,6 +322,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "vnce-core",
+ "vnce-raster",
  "windows-sys",
 ]
 

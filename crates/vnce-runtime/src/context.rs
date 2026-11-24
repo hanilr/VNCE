@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use vnce_core::Size;
-use vnce_term::Capabilities;
+use vnce_term::{Capabilities, GraphicsMode, TerminalInfo};
 
 use crate::config::{self, ConfigError, FpsLimit, RunConfig};
 use crate::input::InputState;
@@ -28,10 +28,20 @@ pub struct Context {
     pub(crate) input: InputState,
     pub(crate) capabilities: Capabilities,
     pub(crate) size: Size,
+    pub(crate) terminal_info: TerminalInfo,
+    pub(crate) graphics_mode: GraphicsMode,
+    /// A graphics mode change requested by the game, applied before the next frame.
+    pub(crate) graphics_request: Option<GraphicsMode>,
 }
 
 impl Context {
-    pub(crate) fn new(config: &RunConfig, capabilities: Capabilities, size: Size) -> Self {
+    pub(crate) fn new(
+        config: &RunConfig,
+        capabilities: Capabilities,
+        size: Size,
+        terminal_info: TerminalInfo,
+        graphics_mode: GraphicsMode,
+    ) -> Self {
         Self {
             quit: false,
             paused: false,
@@ -48,6 +58,9 @@ impl Context {
             input: InputState::new(capabilities.key_release_events, config.key_hold_timeout),
             capabilities,
             size,
+            terminal_info,
+            graphics_mode,
+            graphics_request: None,
         }
     }
 
@@ -177,6 +190,28 @@ impl Context {
         self.size
     }
 
+    /// What the terminal reported about itself (name, version, graphics support, cell
+    /// size in pixels).
+    #[must_use]
+    pub fn terminal_info(&self) -> &TerminalInfo {
+        &self.terminal_info
+    }
+
+    /// How images are shown by [`Frame::draw_image`](vnce_term::Frame::draw_image).
+    #[must_use]
+    pub fn graphics_mode(&self) -> GraphicsMode {
+        self.graphics_requests_or_current()
+    }
+
+    /// Changes how images are shown, from the next frame on.
+    pub fn set_graphics_mode(&mut self, mode: GraphicsMode) {
+        self.graphics_request = Some(mode);
+    }
+
+    fn graphics_requests_or_current(&self) -> GraphicsMode {
+        self.graphics_request.unwrap_or(self.graphics_mode)
+    }
+
     /// Changes the key hold timeout used when the terminal does not report key releases.
     ///
     /// # Errors
@@ -215,6 +250,8 @@ mod tests {
             &RunConfig::default(),
             Capabilities::default(),
             Size::new(80, 24),
+            TerminalInfo::default(),
+            GraphicsMode::Protocol(vnce_term::GraphicsProtocol::Kitty),
         )
     }
 
@@ -240,6 +277,15 @@ mod tests {
             ctx.set_key_hold_timeout(Duration::ZERO),
             Err(ConfigError::ZeroKeyHoldTimeout)
         );
+    }
+
+    #[test]
+    fn graphics_mode_requests() {
+        let mut ctx = context();
+        let sixel = GraphicsMode::Protocol(vnce_term::GraphicsProtocol::Sixel);
+        ctx.set_graphics_mode(sixel);
+        assert_eq!(ctx.graphics_mode(), sixel);
+        assert_eq!(ctx.graphics_request, Some(sixel));
     }
 
     #[test]
