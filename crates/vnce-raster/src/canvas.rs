@@ -1,6 +1,6 @@
 //! The pixel canvas.
 
-use crate::color::{BlendMode, Rgba};
+use crate::color::{BlendMode, Rgba, to_u8};
 
 /// A rectangle in pixel coordinates. `x` and `y` may be negative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -309,6 +309,58 @@ impl Canvas {
         }
     }
 
+    /// A copy scaled to `width × height`: bilinear when enlarging, area averaging when
+    /// shrinking (so small details are averaged instead of skipped). Transparency is
+    /// handled with premultiplied alpha, so transparent pixels do not darken edges.
+    #[must_use]
+    pub fn scaled(&self, width: u32, height: u32) -> Self {
+        if (width, height) == (self.width, self.height) {
+            let mut copy = self.clone();
+            copy.clip = None;
+            return copy;
+        }
+        let mut out = Self::new(width, height);
+        if self.width == 0 || self.height == 0 || width == 0 || height == 0 {
+            return out;
+        }
+        let x_axis = Axis::new(self.width, width);
+        let y_axis = Axis::new(self.height, height);
+        for y in 0..height {
+            let rows = y_axis.taps(y);
+            for x in 0..width {
+                let columns = x_axis.taps(x);
+                let mut sum = [0.0f32; 4];
+                let mut total = 0.0;
+                for &(sy, wy) in &rows {
+                    for &(sx, wx) in &columns {
+                        let weight = wx * wy;
+                        let p = self.pixels[offset(self.width, sx, sy)];
+                        let alpha = f32::from(p.a) / 255.0;
+                        sum[0] += f32::from(p.r) * alpha * weight;
+                        sum[1] += f32::from(p.g) * alpha * weight;
+                        sum[2] += f32::from(p.b) * alpha * weight;
+                        sum[3] += alpha * weight;
+                        total += weight;
+                    }
+                }
+                let alpha = if total > 0.0 { sum[3] / total } else { 0.0 };
+                let pixel = if alpha <= 0.0 {
+                    Rgba::TRANSPARENT
+                } else {
+                    let channel = |value: f32| to_u8(value / (alpha * total));
+                    Rgba::new(
+                        channel(sum[0]),
+                        channel(sum[1]),
+                        channel(sum[2]),
+                        to_u8(alpha * 255.0),
+                    )
+                };
+                out.pixels[offset(width, x, y)] = pixel;
+            }
+        }
+        out
+    }
+
     /// The area that can be drawn on: the canvas intersected with the clip rectangle.
     pub(crate) fn bounds(&self) -> Bounds {
         let canvas = Bounds {
@@ -357,6 +409,62 @@ impl Canvas {
 /// Number of pixels in a `width * height` canvas.
 fn pixel_count(width: u32, height: u32) -> usize {
     usize::try_from(u64::from(width) * u64::from(height)).unwrap_or(usize::MAX)
+}
+
+/// Index of pixel `(x, y)` in a canvas of the given width.
+fn offset(width: u32, x: u32, y: u32) -> usize {
+    usize::try_from(u64::from(y) * u64::from(width) + u64::from(x)).unwrap_or(usize::MAX)
+}
+
+/// Maps destination pixels to weighted source pixels along one axis.
+struct Axis {
+    source: u32,
+    target: u32,
+}
+
+impl Axis {
+    fn new(source: u32, target: u32) -> Self {
+        Self { source, target }
+    }
+
+    /// Source pixels and weights that make up destination pixel `index`.
+    fn taps(&self, index: u32) -> Vec<(u32, f32)> {
+        let ratio = f64::from(self.source) / f64::from(self.target);
+        let last = self.source - 1;
+        if self.target >= self.source {
+            // Enlarging: linear interpolation between the two nearest source pixels.
+            let center = ((f64::from(index) + 0.5) * ratio - 0.5).clamp(0.0, f64::from(last));
+            let first = to_u32(center.floor()).min(last);
+            let second = (first + 1).min(last);
+            #[allow(clippy::cast_possible_truncation, reason = "a fraction in 0..1")]
+            let t = (center - f64::from(first)) as f32;
+            vec![(first, 1.0 - t), (second, t)]
+        } else {
+            // Shrinking: every source pixel covered by the destination pixel, weighted by
+            // how much of it is covered.
+            let start = f64::from(index) * ratio;
+            let end = f64::from(index + 1) * ratio;
+            (to_u32(start.floor())..to_u32(end.ceil()).min(self.source))
+                .filter_map(|source| {
+                    let covered = end.min(f64::from(source) + 1.0) - start.max(f64::from(source));
+                    #[allow(clippy::cast_possible_truncation, reason = "a fraction in 0..1")]
+                    let weight = covered as f32;
+                    (weight > 0.0).then_some((source, weight))
+                })
+                .collect()
+        }
+    }
+}
+
+/// Converts a non-negative, already rounded value to `u32` (saturating).
+fn to_u32(value: f64) -> u32 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "saturating float to int conversion of a non-negative value"
+    )]
+    let result = value as u32;
+    result
 }
 
 #[cfg(test)]
@@ -453,5 +561,37 @@ mod tests {
         let mut canvas = Canvas::filled(2, 2, R);
         canvas.resize(3, 1);
         assert_eq!(canvas.pixels(), &[Rgba::TRANSPARENT; 3]);
+    }
+
+    #[test]
+    fn scaling() {
+        let canvas = Canvas::from_art(&["rg"], &[('r', R), ('g', G)]);
+        assert_eq!(canvas.scaled(2, 1).pixels(), canvas.pixels());
+
+        // Shrinking averages: half red, half green.
+        let half = canvas.scaled(1, 1).get(0, 0).unwrap();
+        assert!(half.r.abs_diff(128) <= 1 && half.g.abs_diff(128) <= 1 && half.a == 255);
+
+        // Enlarging keeps the end colors and blends in between.
+        let wide = canvas.scaled(4, 2);
+        assert_eq!(wide.get(0, 0), Some(R));
+        assert_eq!(wide.get(3, 1), Some(G));
+        let middle = wide.get(1, 0).unwrap();
+        assert!(middle.r > middle.g, "{middle:?}");
+
+        assert_eq!(canvas.scaled(0, 5).pixels().len(), 0);
+        assert_eq!(
+            Canvas::new(0, 0).scaled(3, 3).pixels(),
+            &[Rgba::TRANSPARENT; 9]
+        );
+    }
+
+    #[test]
+    fn scaling_does_not_darken_transparent_edges() {
+        let canvas = Canvas::from_art(&["r."], &[('r', R)]);
+        let shrunk = canvas.scaled(1, 1).get(0, 0).unwrap();
+        // The color stays pure red; only the alpha is halved.
+        assert_eq!((shrunk.r, shrunk.g, shrunk.b), (255, 0, 0));
+        assert!(shrunk.a.abs_diff(128) <= 1);
     }
 }

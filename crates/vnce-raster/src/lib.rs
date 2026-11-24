@@ -7,6 +7,7 @@
 //!   lines, rectangles, circles, triangles with gradients, sprite blitting).
 //! - [`PixelMode`]s: converting a canvas into terminal cells (half blocks, quadrants,
 //!   sextants, octants, Braille or ASCII) with [`Canvas::render`].
+//! - [`protocol`]: encoders for terminal graphics protocols (Kitty, Sixel, iTerm2).
 //! - PNG loading with `Canvas::from_png` / `Canvas::load_png` (feature `png`, enabled by
 //!   default).
 //!
@@ -21,6 +22,7 @@ mod draw;
 #[cfg(feature = "png")]
 pub mod image;
 pub mod mode;
+pub mod protocol;
 
 pub use canvas::{BlitOptions, Canvas, PixelRect};
 pub use color::{BlendMode, Rgba};

@@ -64,3 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   size, cell and window size in pixels; DA1 marks the end of the answers. Raw input is read
   with `rustix` (Unix) and `windows-sys` (Windows). `TerminalOptions::query_terminal`
   (enabled by default); keyboard enhancement now uses the query answer.
+- Graphics protocol encoders (`vnce_raster::protocol`): Kitty (chunked base64 RGBA, ids,
+  placement in cells, deletion), Sixel (median-cut palette up to 256 colors, optional
+  Floyd–Steinberg dithering, run-length encoding, transparency) and iTerm2 (inline PNG).
+  `Canvas::scaled` (bilinear / area averaging with premultiplied alpha) and
+  `Canvas::to_png`.

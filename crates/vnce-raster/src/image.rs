@@ -102,6 +102,35 @@ impl Canvas {
         let bytes = std::fs::read(path)?;
         Self::from_png(&bytes)
     }
+
+    /// Encodes the canvas as an 8-bit RGBA PNG image.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the canvas is empty or too large for PNG.
+    pub fn to_png(&self) -> Result<Vec<u8>, ImageError> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, self.width(), self.height());
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().map_err(encoding_error)?;
+            let mut data = Vec::with_capacity(self.pixels().len() * 4);
+            for p in self.pixels() {
+                data.extend_from_slice(&[p.r, p.g, p.b, p.a]);
+            }
+            writer.write_image_data(&data).map_err(encoding_error)?;
+            writer.finish().map_err(encoding_error)?;
+        }
+        Ok(bytes)
+    }
+}
+
+fn encoding_error(error: png::EncodingError) -> ImageError {
+    match error {
+        png::EncodingError::IoError(error) => ImageError::Io(error),
+        other => ImageError::Decode(other.to_string()),
+    }
 }
 
 #[cfg(test)]
