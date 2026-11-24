@@ -101,3 +101,11 @@ Kitty is fast to encode but sends far too much; Sixel is small but slow to encod
   8.7 ms and Kitty 7.1 ms per frame, about 5 KB each.
 - Raw ESC bytes that crept into a few test literals during editing were turned back into
   `\x1b` escapes.
+- Follow-up after a report of a slower platformer with Sixel (measured on a `TestBackend`
+  of 160 × 45 cells, Sixel forced, scripted run): 113 ms of CPU per frame instead of
+  80 ms before Phase 10, with spikes of 300 ms. Causes: the image was scaled to its cells
+  twice per frame (64 ms each at 1600 × 860), `Canvas::scaled` computed its taps per
+  pixel, the demo produced a canvas slightly off the area size so scaling was needed at
+  all, and exact palettes searched the whole palette for every pixel of a 5-5-5 bin shared
+  by close colors (a sky gradient: 271 ms). After four fixes: 7.8 ms per frame on average,
+  21 ms at worst (a full frame with a new palette), 3 KB per frame.
