@@ -21,3 +21,9 @@ crossterm.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 vnce-core.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

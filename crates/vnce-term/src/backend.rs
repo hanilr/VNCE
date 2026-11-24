@@ -6,11 +6,13 @@
 use std::io::{self, Write};
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use vnce_core::{Buffer, Color, Modifiers, Size, Style};
 
+use crate::query::{QUERY_TIMEOUT, TerminalInfo};
 use crate::terminal::TerminalOptions;
 
 /// The destination of the terminal output.
@@ -56,6 +58,32 @@ pub trait Backend {
     fn key_release_events(&self) -> bool {
         false
     }
+
+    /// Sends `request` to the terminal and reads its answer until `done` returns `true` or
+    /// `timeout` expires. Used for terminal queries ([`TerminalInfo`]).
+    ///
+    /// The default implementation sends nothing and returns an empty answer.
+    ///
+    /// # Errors
+    ///
+    /// Returns any I/O error.
+    fn query(
+        &mut self,
+        request: &[u8],
+        timeout: Duration,
+        done: &dyn Fn(&[u8]) -> bool,
+    ) -> io::Result<Vec<u8>> {
+        let _ = (request, timeout, done);
+        Ok(Vec::new())
+    }
+
+    /// What the terminal reported about itself during the last [`Backend::enter`] (see
+    /// [`TerminalOptions::query_terminal`]).
+    ///
+    /// The default implementation returns an empty [`TerminalInfo`].
+    fn terminal_info(&self) -> TerminalInfo {
+        TerminalInfo::default()
+    }
 }
 
 /// Set while a [`CrosstermBackend`] has the terminal in full-screen mode; used by the
@@ -78,6 +106,8 @@ pub struct CrosstermBackend {
     stdout: io::Stdout,
     /// Whether the kitty keyboard protocol was enabled by [`Backend::enter`].
     keyboard_enhanced: bool,
+    /// Answers to the terminal queries of the last [`Backend::enter`].
+    info: TerminalInfo,
 }
 
 impl CrosstermBackend {
@@ -87,6 +117,7 @@ impl CrosstermBackend {
         Self {
             stdout: io::stdout(),
             keyboard_enhanced: false,
+            info: TerminalInfo::default(),
         }
     }
 }
@@ -119,8 +150,17 @@ impl Backend for CrosstermBackend {
             restore_terminal();
             return Err(error);
         }
-        self.keyboard_enhanced =
-            options.keyboard_enhancement && enable_keyboard_enhancement(&mut self.stdout);
+        // Queries run in raw mode, before any input event is read. A failed query is not an
+        // error: the terminal is simply treated as answering nothing.
+        let supports_keyboard = if options.query_terminal {
+            self.info = TerminalInfo::query(self, QUERY_TIMEOUT).unwrap_or_default();
+            Some(self.info.kitty_keyboard)
+        } else {
+            self.info = TerminalInfo::default();
+            None
+        };
+        self.keyboard_enhanced = options.keyboard_enhancement
+            && enable_keyboard_enhancement(&mut self.stdout, supports_keyboard);
         Ok(())
     }
 
@@ -133,6 +173,21 @@ impl Backend for CrosstermBackend {
     fn key_release_events(&self) -> bool {
         // The Windows console API always reports key releases.
         cfg!(windows) || self.keyboard_enhanced
+    }
+
+    fn query(
+        &mut self,
+        request: &[u8],
+        timeout: Duration,
+        done: &dyn Fn(&[u8]) -> bool,
+    ) -> io::Result<Vec<u8>> {
+        self.stdout.write_all(request)?;
+        self.stdout.flush()?;
+        crate::sys::read_answer(timeout, done)
+    }
+
+    fn terminal_info(&self) -> TerminalInfo {
+        self.info.clone()
     }
 }
 
@@ -173,11 +228,17 @@ fn enter_modes(stdout: &mut io::Stdout, options: TerminalOptions) -> io::Result<
 /// It is never enabled on Windows, where the console API already reports releases.
 /// The flags are pushed after entering the alternate screen because terminals keep a
 /// separate protocol stack per screen.
-fn enable_keyboard_enhancement(stdout: &mut io::Stdout) -> bool {
+///
+/// `supported` is the answer of our own terminal query; when no query was made (`None`),
+/// `crossterm` checks support itself.
+fn enable_keyboard_enhancement(stdout: &mut io::Stdout, supported: Option<bool>) -> bool {
     use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
     use crossterm::execute;
 
-    if cfg!(windows) || !crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false) {
+    let supported = supported.unwrap_or_else(|| {
+        !cfg!(windows) && crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false)
+    });
+    if cfg!(windows) || !supported {
         return false;
     }
     // Reporting all keys as escape codes is required to get release events for keys that
@@ -243,6 +304,9 @@ pub struct TestBackend {
     entered: bool,
     flushes: usize,
     key_release_events: bool,
+    query_answer: Vec<u8>,
+    queries: Vec<Vec<u8>>,
+    info: TerminalInfo,
 }
 
 impl TestBackend {
@@ -259,12 +323,26 @@ impl TestBackend {
             entered: false,
             flushes: 0,
             key_release_events: false,
+            query_answer: Vec::new(),
+            queries: Vec::new(),
+            info: TerminalInfo::default(),
         }
     }
 
     /// Sets the value returned by [`Backend::key_release_events`].
     pub fn set_key_release_events(&mut self, enabled: bool) {
         self.key_release_events = enabled;
+    }
+
+    /// Sets the answer returned to every [`Backend::query`], as a terminal would send it.
+    pub fn set_query_answer(&mut self, answer: &[u8]) {
+        self.query_answer = answer.to_vec();
+    }
+
+    /// Every query request received so far.
+    #[must_use]
+    pub fn queries(&self) -> &[Vec<u8>] {
+        &self.queries
     }
 
     /// Changes the reported terminal size, like a window resize. The screen is cleared.
@@ -453,8 +531,13 @@ impl Backend for TestBackend {
         Ok(())
     }
 
-    fn enter(&mut self, _options: &TerminalOptions) -> io::Result<()> {
+    fn enter(&mut self, options: &TerminalOptions) -> io::Result<()> {
         self.entered = true;
+        self.info = if options.query_terminal {
+            TerminalInfo::query(self, QUERY_TIMEOUT)?
+        } else {
+            TerminalInfo::default()
+        };
         Ok(())
     }
 
@@ -465,6 +548,21 @@ impl Backend for TestBackend {
 
     fn key_release_events(&self) -> bool {
         self.key_release_events
+    }
+
+    fn query(
+        &mut self,
+        request: &[u8],
+        _timeout: Duration,
+        _done: &dyn Fn(&[u8]) -> bool,
+    ) -> io::Result<Vec<u8>> {
+        // Queries are recorded separately so they never appear on the emulated screen.
+        self.queries.push(request.to_vec());
+        Ok(self.query_answer.clone())
+    }
+
+    fn terminal_info(&self) -> TerminalInfo {
+        self.info.clone()
     }
 }
 

@@ -318,9 +318,11 @@ name = "vnce-term"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "rustix",
  "unicode-segmentation",
  "unicode-width",
  "vnce-core",
+ "windows-sys",
 ]
 
 [[package]]

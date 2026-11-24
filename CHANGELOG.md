@@ -59,3 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `raster` example: `M` only cycles through available modes. Octant mode showed question
   marks because almost no font contains the Unicode 16 octant characters; it is now only
   reachable with `Shift+M` / `--all-modes`, with a warning on the status line.
+- Terminal queries (`vnce_term::query`, `Terminal::info`): XTVERSION (name and version),
+  Kitty graphics and keyboard protocol support, Sixel support, color registers and maximum
+  size, cell and window size in pixels; DA1 marks the end of the answers. Raw input is read
+  with `rustix` (Unix) and `windows-sys` (Windows). `TerminalOptions::query_terminal`
+  (enabled by default); keyboard enhancement now uses the query answer.

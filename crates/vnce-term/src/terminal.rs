@@ -7,6 +7,7 @@ use vnce_core::{Buffer, Rect, Size};
 use crate::ansi::{self, StyleState};
 use crate::backend::{Backend, CrosstermBackend};
 use crate::capabilities::Capabilities;
+use crate::query::TerminalInfo;
 
 /// Which terminal modes are enabled by [`Terminal::enter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -33,11 +34,17 @@ pub struct TerminalOptions {
     /// as `Char('+')`. On Windows releases are always reported and this option has no
     /// effect.
     pub keyboard_enhancement: bool,
+    /// Ask the terminal what it supports when entering ([`Terminal::info`]): name and
+    /// version, graphics protocols, cell size in pixels, keyboard protocol. Takes at most
+    /// [`QUERY_TIMEOUT`](crate::query::QUERY_TIMEOUT), usually a few milliseconds.
+    pub query_terminal: bool,
 }
 
 impl Default for TerminalOptions {
     /// Alternate screen, hidden cursor and bracketed paste; no mouse or focus events and no
     /// keyboard enhancement.
+    ///
+    /// The terminal is queried (see [`TerminalOptions::query_terminal`]).
     fn default() -> Self {
         Self {
             alternate_screen: true,
@@ -46,6 +53,7 @@ impl Default for TerminalOptions {
             bracketed_paste: true,
             focus_events: false,
             keyboard_enhancement: false,
+            query_terminal: true,
         }
     }
 }
@@ -107,6 +115,8 @@ pub struct Terminal<B: Backend> {
     buffers: [Buffer; 2],
     current: usize,
     capabilities: Capabilities,
+    /// What the terminal reported about itself when entering.
+    info: TerminalInfo,
     entered: bool,
     /// Set when the screen contents are unknown (first frame, resize, [`Terminal::clear`]).
     full_redraw: bool,
@@ -154,6 +164,7 @@ impl<B: Backend> Terminal<B> {
             buffers: [Buffer::empty(size), Buffer::empty(size)],
             current: 0,
             capabilities,
+            info: TerminalInfo::default(),
             entered: false,
             full_redraw: true,
             output: Vec::new(),
@@ -173,7 +184,15 @@ impl<B: Backend> Terminal<B> {
         if self.backend.key_release_events() {
             self.capabilities.key_release_events = true;
         }
+        self.info = self.backend.terminal_info();
         Ok(())
+    }
+
+    /// What the terminal reported about itself when entering (empty if it was not queried,
+    /// see [`TerminalOptions::query_terminal`]).
+    #[must_use]
+    pub fn info(&self) -> &TerminalInfo {
+        &self.info
     }
 
     /// Leaves full-screen mode and restores the terminal. Called automatically on drop.
@@ -556,5 +575,35 @@ mod tests {
         terminal.backend_mut().set_key_release_events(true);
         terminal.enter_mode(TerminalOptions::default()).unwrap();
         assert!(terminal.capabilities().key_release_events);
+    }
+
+    #[test]
+    fn entering_queries_the_terminal() {
+        let mut terminal = terminal(1, 1);
+        terminal
+            .backend_mut()
+            .set_query_answer(b"\x1bP>|foot(1.18.0)\x1b\\\x1b[?62;4;22c");
+        terminal.enter_mode(TerminalOptions::default()).unwrap();
+        assert_eq!(
+            terminal.backend().queries(),
+            [TerminalInfo::REQUEST.to_vec()]
+        );
+        assert!(terminal.info().sixel);
+        assert_eq!(terminal.info().name.as_deref(), Some("foot"));
+        // The query never shows up on the screen.
+        assert_eq!(terminal.backend().output(), b"");
+    }
+
+    #[test]
+    fn querying_can_be_disabled() {
+        let mut terminal = terminal(1, 1);
+        terminal.backend_mut().set_query_answer(b"\x1b[?62;4c");
+        let options = TerminalOptions {
+            query_terminal: false,
+            ..TerminalOptions::default()
+        };
+        terminal.enter_mode(options).unwrap();
+        assert_eq!(terminal.backend().queries(), &[] as &[Vec<u8>]);
+        assert_eq!(terminal.info(), &TerminalInfo::default());
     }
 }
