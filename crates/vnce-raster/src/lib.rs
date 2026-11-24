@@ -1,0 +1,19 @@
+//! # `vnce_raster`
+//!
+//! Pixel graphics for the Variation CLI Engine:
+//!
+//! - [`Rgba`] pixels and [`BlendMode`]s.
+//! - [`Canvas`]: a pixel buffer with clipping and drawing primitives (lines, anti-aliased
+//!   lines, rectangles, circles, triangles with gradients, sprite blitting).
+//!
+//! All drawing functions take signed coordinates; anything outside the canvas or the clip
+//! rectangle is ignored, so shapes can safely be partly or completely off-screen.
+//!
+//! This crate is part of the **Variation** ecosystem.
+
+pub mod canvas;
+pub mod color;
+mod draw;
+
+pub use canvas::{BlitOptions, Canvas, PixelRect};
+pub use color::{BlendMode, Rgba};

@@ -21,3 +21,4 @@ workspace = true
 vnce-core.workspace = true
 vnce-term.workspace = true
 vnce-runtime.workspace = true
+vnce-raster.workspace = true

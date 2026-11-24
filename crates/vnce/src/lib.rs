@@ -15,3 +15,6 @@ pub use vnce_term;
 
 /// The game loop: fixed-timestep updates, frame limiting, input state and the `Game` trait.
 pub use vnce_runtime;
+
+/// Pixel graphics: canvas, blending, drawing primitives and pixel-to-cell conversion.
+pub use vnce_raster;

@@ -40,3 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `hello` example: frames are paced by the clock; input events (for example mouse
   movement) no longer trigger extra frames and speed up the animation.
+- `vnce-raster` (`vnce_raster`): `Rgba` pixels with `Replace`, `Alpha`, `Add` and
+  `Multiply` blending; `Canvas` with clipping, Bresenham and anti-aliased (Wu) lines,
+  rectangles, circles, triangles with top-left fill rule and per-vertex gradients, sprite
+  blitting (regions, flips, color key, opacity) and text-art sprites.

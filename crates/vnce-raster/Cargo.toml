@@ -1,0 +1,20 @@
+[package]
+name = "vnce-raster"
+description = "Pixel canvas, CPU rasterizer and pixel-to-terminal-cell modes for the Variation CLI Engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["terminal", "graphics", "rasterizer", "pixel", "canvas"]
+categories = ["command-line-interface", "graphics", "rendering"]
+
+[lib]
+name = "vnce_raster"
+
+[lints]
+workspace = true
+
+[dependencies]
+vnce-core.workspace = true
