@@ -416,21 +416,30 @@ fn view(ctx: &Context, frame: &Frame<'_>) -> (Rect, u32, u32, u32) {
     (area, view_width.max(1), view_height.max(1), scale)
 }
 
-/// Shows `canvas` in `area`, enlarged `scale` times without blurring the pixels.
-fn present(frame: &mut Frame<'_>, area: Rect, canvas: &Canvas, scale: u32) {
-    if scale <= 1 {
+/// Shows `canvas` in `area`, enlarged without blurring the pixels: to the exact pixel size
+/// of the area (nearest neighbour), so the terminal never has to scale it again.
+fn present(frame: &mut Frame<'_>, area: Rect, canvas: &Canvas) {
+    let (width, height) = frame.image_pixel_size(area);
+    if (width, height) == (canvas.width(), canvas.height()) || width == 0 || height == 0 {
         frame.draw_image(area, canvas);
         return;
     }
-    let mut big = Canvas::new(canvas.width() * scale, canvas.height() * scale);
-    for y in 0..big.height() {
-        for x in 0..big.width() {
-            if let Some(pixel) = canvas.get(x / scale, y / scale) {
-                big.pixel(x as i32, y as i32, pixel);
-            }
-        }
+    // The source column of every destination column, computed once.
+    let columns: Vec<usize> = (0..width)
+        .map(|x| (u64::from(x) * u64::from(canvas.width()) / u64::from(width)) as usize)
+        .collect();
+    let source = canvas.pixels();
+    let stride = canvas.width() as usize;
+    let mut pixels = Vec::with_capacity(width as usize * height as usize);
+    for y in 0..height {
+        let row = (u64::from(y) * u64::from(canvas.height()) / u64::from(height)) as usize;
+        let line = &source[row * stride..(row + 1) * stride];
+        pixels.extend(columns.iter().map(|&x| line[x]));
     }
-    frame.draw_image(area, &big);
+    match Canvas::from_pixels(width, height, pixels) {
+        Some(big) => frame.draw_image(area, &big),
+        None => frame.draw_image(area, canvas),
+    }
 }
 
 fn status_line(frame: &mut Frame<'_>, text: &str) {
@@ -535,11 +544,11 @@ impl Scene<Shared> for Title {
     }
 
     fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        let (area, width, height, scale) = view(ctx, frame);
+        let (area, width, height, _) = view(ctx, frame);
         if width > 0 {
             let mut canvas = Canvas::new(width, height);
             draw_background(&mut canvas, ((self.time * 20.0) as i32, 0), self.time);
-            present(frame, area, &canvas, scale);
+            present(frame, area, &canvas);
         }
         status_line(frame, " vnce platformer");
         let best = shared.best.map_or_else(String::new, |best| {
@@ -768,7 +777,7 @@ impl Scene<Shared> for Play {
     }
 
     fn render(&mut self, _shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        let (area, width, height, scale) = view(ctx, frame);
+        let (area, width, height, _) = view(ctx, frame);
         if width > 0 {
             if self.camera.viewport() != (width as f32, height as f32) {
                 self.camera.set_viewport(width as f32, height as f32);
@@ -803,7 +812,7 @@ impl Scene<Shared> for Play {
             };
             self.player_sheet
                 .draw(&mut canvas, player.animator.frame(), px, py, options);
-            present(frame, area, &canvas, scale);
+            present(frame, area, &canvas);
         }
         let collected = self.total_coins - self.coins.len();
         status_line(
