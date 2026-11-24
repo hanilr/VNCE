@@ -151,3 +151,100 @@ fn random_answers_never_crash_the_parser() {
         assert!(TerminalInfo::parse(&answer).responded, "{answer:?}");
     }
 }
+
+#[test]
+fn random_image_updates_stay_consistent() {
+    use std::collections::HashSet;
+    use vnce_core::Rect;
+    use vnce_raster::{Canvas, Rgba};
+    use vnce_term::{GraphicsMode, GraphicsProtocol};
+
+    let mut rng = Rng::new(2024);
+    for protocol in [
+        GraphicsProtocol::Kitty,
+        GraphicsProtocol::Sixel,
+        GraphicsProtocol::Iterm2,
+    ] {
+        let mut terminal =
+            Terminal::new(TestBackend::new(30, 12), Capabilities::default()).expect("terminal");
+        terminal.set_graphics_mode(GraphicsMode::Protocol(protocol));
+        // Kitty ids on the screen.
+        let mut live: HashSet<String> = HashSet::new();
+        let mut pictures: Vec<(Rect, Canvas)> = Vec::new();
+        for _ in 0..150 {
+            match rng.below(6) {
+                // A new image, often at the exact cell resolution (10 × 20 pixels).
+                0 if pictures.len() < 3 => {
+                    let area = Rect::new(
+                        rng.below(20) as u16,
+                        rng.below(8) as u16,
+                        1 + rng.below(12) as u16,
+                        1 + rng.below(5) as u16,
+                    );
+                    let (width, height) = if rng.below(3) == 0 {
+                        (1 + rng.below(50) as u32, 1 + rng.below(50) as u32)
+                    } else {
+                        (u32::from(area.width) * 10, u32::from(area.height) * 20)
+                    };
+                    pictures.push((area, Canvas::filled(width, height, Rgba::rgb(9, 9, 9))));
+                }
+                1 if !pictures.is_empty() => {
+                    pictures.remove(rng.below(pictures.len() as u64) as usize);
+                }
+                // Change a few pixels or everything.
+                _ if !pictures.is_empty() => {
+                    let index = rng.below(pictures.len() as u64) as usize;
+                    let canvas = &mut pictures[index].1;
+                    let color = Rgba::rgb(rng.below(256) as u8, 0, 0);
+                    if rng.below(5) == 0 {
+                        canvas.clear(color);
+                    } else {
+                        let (x, y) = (
+                            rng.below(u64::from(canvas.width())),
+                            rng.below(u64::from(canvas.height())),
+                        );
+                        canvas.pixel(x as i32, y as i32, color);
+                    }
+                }
+                _ => {}
+            }
+            if rng.below(30) == 0 {
+                terminal.clear();
+                live.clear();
+            }
+            terminal
+                .draw(|f| {
+                    for (area, canvas) in &pictures {
+                        f.draw_image(*area, canvas);
+                    }
+                })
+                .expect("draw");
+            for sequence in terminal.backend().graphics_sequences() {
+                let text = String::from_utf8_lossy(sequence);
+                let id = text
+                    .split([',', ';'])
+                    .find_map(|key| key.strip_prefix("i="))
+                    .map(str::to_owned);
+                if text.starts_with("\x1b_Ga=d,d=A") {
+                    live.clear();
+                } else if let Some(id) = id {
+                    if text.starts_with("\x1b_Ga=d") {
+                        live.remove(&id);
+                    } else if text.starts_with("\x1b_Ga=T") {
+                        live.insert(id);
+                    }
+                }
+            }
+            terminal.backend_mut().clear_graphics_sequences();
+        }
+        // Without images, no Kitty image is left on the screen.
+        terminal.draw(|_| {}).expect("draw");
+        for sequence in terminal.backend().graphics_sequences() {
+            let text = String::from_utf8_lossy(sequence);
+            if let Some(id) = text.split(',').find_map(|k| k.strip_prefix("i=")) {
+                live.remove(id);
+            }
+        }
+        assert!(live.is_empty(), "{protocol:?} left images {live:?}");
+    }
+}

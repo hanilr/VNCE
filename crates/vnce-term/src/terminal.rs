@@ -79,6 +79,52 @@ struct PlacedImage {
     /// Kept to send the image again (after a clear or when an overlapping image is
     /// removed).
     canvas: Canvas,
+    /// Kitty images at the exact cell resolution are split into tiles, so only the tiles
+    /// that change are sent again.
+    tiles: Option<Tiles>,
+    /// The Sixel image as drawn: `canvas` scaled to the pixels of its area. Compared with
+    /// the next frame to find the cells that changed.
+    shown: Option<Canvas>,
+}
+
+/// A Kitty image split into a grid of tiles, each an image of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Tiles {
+    /// Size of a tile in cells (tiles on the right and bottom edges may be smaller).
+    columns: u16,
+    rows: u16,
+    /// Number of tiles across and down.
+    across: u16,
+    down: u16,
+    /// Kitty image id of each tile, row by row.
+    ids: Vec<u32>,
+}
+
+impl Tiles {
+    /// The area (in cells) of tile `index` of an image in `area`.
+    fn area(&self, area: Rect, index: usize) -> Rect {
+        let index = u16::try_from(index).unwrap_or(u16::MAX);
+        let (column, row) = (index % self.across, index / self.across);
+        let x = column * self.columns;
+        let y = row * self.rows;
+        Rect::new(
+            area.x + x,
+            area.y + y,
+            self.columns.min(area.width - x),
+            self.rows.min(area.height - y),
+        )
+    }
+}
+
+/// What to send for an image after the cells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ImageSend {
+    /// The whole image (index into `placed`).
+    Full(usize),
+    /// Only these areas (in cells) of a Sixel or iTerm2 image.
+    Patches(usize, Vec<Rect>),
+    /// Only these tiles of a tiled Kitty image.
+    Tiles(usize, Vec<usize>),
 }
 
 /// A drawing surface for one frame, passed to the closure of [`Terminal::draw`].
@@ -273,6 +319,8 @@ struct ImageState {
     /// Whether Kitty images may be on the screen (they survive clearing the screen).
     kitty_shown: bool,
     next_id: u32,
+    /// Ids freed when tiled images were rebuilt, used again first.
+    free_ids: Vec<u32>,
     /// Keeps the Sixel palette from frame to frame (faster, no color flicker).
     sixel: protocol::sixel::Encoder,
 }
@@ -327,6 +375,7 @@ impl<B: Backend> Terminal<B> {
                 placed: Vec::new(),
                 kitty_shown: false,
                 next_id: 1,
+                free_ids: Vec::new(),
                 sixel: protocol::sixel::Encoder::new(),
             },
         })
@@ -537,9 +586,14 @@ impl<B: Backend> Terminal<B> {
             }
         }
 
-        let sends = self
-            .images
-            .plan(self.graphics, self.full_redraw, current, previous, out);
+        let sends = self.images.plan(
+            self.graphics,
+            self.full_redraw,
+            cell_pixels,
+            current,
+            previous,
+            out,
+        );
 
         // Where the terminal cursor is, if known.
         let mut cursor: Option<(u16, u16)> = None;
@@ -568,21 +622,8 @@ impl<B: Backend> Terminal<B> {
 
         // Images go on top of the cells written above.
         if let GraphicsMode::Protocol(graphics) = self.graphics {
-            for index in sends {
-                let image = &self.images.placed[index];
-                ansi::move_to(out, image.area.x, image.area.y)?;
-                write_image(
-                    graphics,
-                    image,
-                    cell_pixels,
-                    sixel_colors,
-                    &mut self.images.sixel,
-                    out,
-                );
-                if graphics == GraphicsProtocol::Kitty {
-                    self.images.kitty_shown = true;
-                }
-            }
+            self.images
+                .write(graphics, sends, cell_pixels, sixel_colors, out)?;
         }
 
         ansi::reset_style(out)?;
@@ -606,14 +647,19 @@ impl ImageState {
     ///   them is redrawn,
     /// - keeps the cells under unchanged Sixel / iTerm2 images as they are, because
     ///   writing them would erase the image.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one pass over the requests keeps every case of image updates together"
+    )]
     fn plan(
         &mut self,
         graphics: GraphicsMode,
         full_redraw: bool,
+        cell_pixels: (u16, u16),
         current: &mut Buffer,
         previous: &mut Buffer,
         out: &mut Vec<u8>,
-    ) -> Vec<usize> {
+    ) -> Vec<ImageSend> {
         let old = std::mem::take(&mut self.placed);
         let requests = std::mem::take(&mut self.requests);
         let GraphicsMode::Protocol(protocol) = graphics else {
@@ -624,57 +670,110 @@ impl ImageState {
         let kitty = protocol == GraphicsProtocol::Kitty;
 
         // Areas of old images that will not stay exactly as they are.
+        // (An image replaced by a new one in the same area keeps its area covered, so only
+        // the parts that changed are sent.)
         let removed: Vec<Rect> = old
             .iter()
-            .filter(|placed| {
-                full_redraw
-                    || !requests
-                        .iter()
-                        .any(|r| r.area == placed.area && r.hash == placed.hash)
-            })
+            .filter(|placed| full_redraw || !requests.iter().any(|r| r.area == placed.area))
             .map(|placed| placed.area)
             .collect();
 
         let mut old: Vec<Option<PlacedImage>> = old.into_iter().map(Some).collect();
         let mut sends = Vec::new();
         for request in requests {
-            let matching = old.iter().position(|placed| {
-                placed
-                    .as_ref()
-                    .is_some_and(|p| p.area == request.area && p.hash == request.hash)
-            });
-            let previous_image = matching.and_then(|index| old[index].take());
+            let same_area = old
+                .iter()
+                .position(|placed| placed.as_ref().is_some_and(|p| p.area == request.area));
+            let previous_image = same_area.and_then(|index| old[index].take());
             // Removing a Sixel / iTerm2 image redraws the text under it, which also erases
             // any image it overlapped; Kitty images are independent of the text.
             let overlaps_removed =
                 !kitty && removed.iter().any(|area| area.intersects(request.area));
-            let unchanged = previous_image.is_some() && !full_redraw && !overlaps_removed;
-            let (id, canvas) = match (previous_image, request.canvas) {
+            let can_update = !full_redraw && !overlaps_removed;
+            let index = self.placed.len();
+            match (previous_image, request.canvas) {
                 // Same hash: the same pixels are already known.
-                (Some(placed), _) => (placed.id, placed.canvas),
-                (None, Some(canvas)) => (self.allocate_id(), canvas),
-                (None, None) => continue,
-            };
-            if unchanged {
-                if !kitty {
-                    copy_cells(previous, current, request.area);
+                (Some(placed), _) if placed.hash == request.hash => {
+                    if can_update {
+                        if !kitty {
+                            copy_cells(previous, current, request.area);
+                        }
+                    } else {
+                        sends.push(ImageSend::Full(index));
+                    }
+                    self.placed.push(placed);
                 }
-            } else {
-                sends.push(self.placed.len());
+                // The image in this area changed: send only what changed when possible.
+                (Some(mut placed), Some(canvas)) => {
+                    let update = can_update
+                        .then(|| changed_parts(protocol, &placed, &canvas, cell_pixels))
+                        .flatten();
+                    let shown = sixel_shown(protocol, &canvas, request.area, cell_pixels);
+                    placed.hash = request.hash;
+                    placed.canvas = canvas;
+                    placed.shown = shown;
+                    match update {
+                        Some(Change::Patches(areas)) => {
+                            if !kitty {
+                                copy_cells(previous, current, request.area);
+                            }
+                            if !areas.is_empty() {
+                                sends.push(ImageSend::Patches(index, areas));
+                            }
+                        }
+                        Some(Change::Tiles(tiles)) => {
+                            if !tiles.is_empty() {
+                                sends.push(ImageSend::Tiles(index, tiles));
+                            }
+                        }
+                        None => {
+                            // A full resend under the same ids: the old data is freed first
+                            // (inside the synchronized update, so nothing flickers), and
+                            // tiles are rebuilt for the new size.
+                            if kitty {
+                                for id in placed.kitty_ids() {
+                                    protocol::kitty::delete(id, out);
+                                }
+                            }
+                            if let Some(tiles) = placed.tiles.take() {
+                                self.free_ids.extend(tiles.ids);
+                            }
+                            placed.tiles =
+                                self.tiles_for(protocol, &placed.canvas, request.area, cell_pixels);
+                            if !kitty && !full_redraw {
+                                // Old pixels outside the new image would otherwise stay.
+                                invalidate_cells(previous, request.area);
+                            }
+                            sends.push(ImageSend::Full(index));
+                        }
+                    }
+                    self.placed.push(placed);
+                }
+                (_, Some(canvas)) => {
+                    let id = self.allocate_id();
+                    let tiles = self.tiles_for(protocol, &canvas, request.area, cell_pixels);
+                    let shown = sixel_shown(protocol, &canvas, request.area, cell_pixels);
+                    sends.push(ImageSend::Full(index));
+                    self.placed.push(PlacedImage {
+                        area: request.area,
+                        hash: request.hash,
+                        id,
+                        canvas,
+                        tiles,
+                        shown,
+                    });
+                }
+                (_, None) => {}
             }
-            self.placed.push(PlacedImage {
-                area: request.area,
-                hash: request.hash,
-                id,
-                canvas,
-            });
         }
 
         // Images that are gone.
         if !full_redraw {
             for placed in old.into_iter().flatten() {
                 if kitty {
-                    protocol::kitty::delete(placed.id, out);
+                    for id in placed.kitty_ids() {
+                        protocol::kitty::delete(id, out);
+                    }
                 } else {
                     invalidate_cells(previous, placed.area);
                 }
@@ -683,11 +782,249 @@ impl ImageState {
         sends
     }
 
+    /// Splits a Kitty image into tiles when it is exactly at the resolution of its cells.
+    fn tiles_for(
+        &mut self,
+        protocol: GraphicsProtocol,
+        canvas: &Canvas,
+        area: Rect,
+        cell_pixels: (u16, u16),
+    ) -> Option<Tiles> {
+        if protocol != GraphicsProtocol::Kitty
+            || !exact_cells(canvas, area, cell_pixels)
+            || area.area() < 16
+        {
+            return None;
+        }
+        // At most 8 × 8 tiles, at least 4 × 2 cells each.
+        let columns = area.width.div_ceil(8).max(4);
+        let rows = area.height.div_ceil(8).max(2);
+        let across = area.width.div_ceil(columns);
+        let down = area.height.div_ceil(rows);
+        let ids = (0..usize::from(across) * usize::from(down))
+            .map(|_| self.allocate_id())
+            .collect();
+        Some(Tiles {
+            columns,
+            rows,
+            across,
+            down,
+            ids,
+        })
+    }
+
     fn allocate_id(&mut self) -> u32 {
+        // Ids of tiles that were rebuilt are used again first.
+        if let Some(id) = self.free_ids.pop() {
+            return id;
+        }
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).unwrap_or(1);
         id
     }
+}
+
+impl ImageState {
+    /// Sends the images planned by [`ImageState::plan`].
+    fn write(
+        &mut self,
+        graphics: GraphicsProtocol,
+        sends: Vec<ImageSend>,
+        cell_pixels: (u16, u16),
+        sixel_colors: u16,
+        out: &mut Vec<u8>,
+    ) -> io::Result<()> {
+        let sixel = &mut self.sixel;
+        for send in sends {
+            match send {
+                ImageSend::Full(index) => {
+                    let image = &self.placed[index];
+                    if let Some(tiles) = &image.tiles {
+                        for tile in 0..tiles.ids.len() {
+                            write_tile(image, tile, out)?;
+                        }
+                    } else {
+                        ansi::move_to(out, image.area.x, image.area.y)?;
+                        write_image(graphics, image, cell_pixels, sixel_colors, sixel, out);
+                    }
+                }
+                ImageSend::Patches(index, areas) => {
+                    let image = &self.placed[index];
+                    for area in areas {
+                        ansi::move_to(out, area.x, area.y)?;
+                        write_patch(graphics, image, area, cell_pixels, sixel_colors, sixel, out);
+                    }
+                }
+                ImageSend::Tiles(index, tiles) => {
+                    let image = &self.placed[index];
+                    for tile in tiles {
+                        if let Some(id) = image.tiles.as_ref().map(|t| t.ids[tile]) {
+                            protocol::kitty::delete(id, out);
+                        }
+                        write_tile(image, tile, out)?;
+                    }
+                }
+            }
+            if graphics == GraphicsProtocol::Kitty {
+                self.kitty_shown = true;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PlacedImage {
+    /// Every Kitty id of the image: its tiles, or the image itself.
+    fn kitty_ids(&self) -> Vec<u32> {
+        self.tiles
+            .as_ref()
+            .map_or_else(|| vec![self.id], |tiles| tiles.ids.clone())
+    }
+}
+
+/// The parts of an image that changed.
+enum Change {
+    /// Areas (in cells) of a Sixel or iTerm2 image.
+    Patches(Vec<Rect>),
+    /// Tiles of a Kitty image.
+    Tiles(Vec<usize>),
+}
+
+/// Sends patches only while they cover less than this share of the image; beyond it, one
+/// whole image is cheaper.
+const PATCH_LIMIT_PERCENT: usize = 70;
+
+/// Returns `true` if `canvas` has exactly the pixels of the cells of `area`, so its parts
+/// map onto whole cells.
+fn exact_cells(canvas: &Canvas, area: Rect, cell_pixels: (u16, u16)) -> bool {
+    canvas.width() == u32::from(area.width) * u32::from(cell_pixels.0)
+        && canvas.height() == u32::from(area.height) * u32::from(cell_pixels.1)
+}
+
+/// For Sixel, the image as drawn: scaled to the pixels of its area.
+fn sixel_shown(
+    protocol: GraphicsProtocol,
+    canvas: &Canvas,
+    area: Rect,
+    cell_pixels: (u16, u16),
+) -> Option<Canvas> {
+    (protocol == GraphicsProtocol::Sixel).then(|| {
+        canvas.scaled(
+            u32::from(area.width) * u32::from(cell_pixels.0),
+            u32::from(area.height) * u32::from(cell_pixels.1),
+        )
+    })
+}
+
+/// Which cells of `area` differ between two images of its exact cell resolution.
+fn changed_cells(old: &Canvas, new: &Canvas, area: Rect, cell_pixels: (u16, u16)) -> Vec<bool> {
+    let (cell_width, cell_height) = (usize::from(cell_pixels.0), usize::from(cell_pixels.1));
+    let columns = usize::from(area.width);
+    let mut changed = vec![false; columns * usize::from(area.height)];
+    let width = new.width() as usize;
+    for (y, (old_row, new_row)) in old
+        .pixels()
+        .chunks(width)
+        .zip(new.pixels().chunks(width))
+        .enumerate()
+    {
+        if old_row == new_row {
+            continue;
+        }
+        let row = y / cell_height;
+        for (x, (a, b)) in old_row.iter().zip(new_row).enumerate() {
+            if a != b {
+                changed[row * columns + x / cell_width] = true;
+            }
+        }
+    }
+    changed
+}
+
+/// What to send for an image that changed in place, or `None` for the whole image.
+fn changed_parts(
+    protocol: GraphicsProtocol,
+    placed: &PlacedImage,
+    canvas: &Canvas,
+    cell_pixels: (u16, u16),
+) -> Option<Change> {
+    let area = placed.area;
+    match protocol {
+        GraphicsProtocol::Kitty => {
+            let tiles = placed.tiles.as_ref()?;
+            if !exact_cells(canvas, area, cell_pixels)
+                || (placed.canvas.width(), placed.canvas.height())
+                    != (canvas.width(), canvas.height())
+            {
+                return None;
+            }
+            let changed = changed_cells(&placed.canvas, canvas, area, cell_pixels);
+            let columns = usize::from(area.width);
+            let dirty = (0..tiles.ids.len())
+                .filter(|&index| {
+                    let tile = tiles.area(area, index);
+                    (tile.top()..tile.bottom()).any(|y| {
+                        (tile.left()..tile.right()).any(|x| {
+                            let (dx, dy) = (usize::from(x - area.x), usize::from(y - area.y));
+                            changed[dy * columns + dx]
+                        })
+                    })
+                })
+                .collect();
+            Some(Change::Tiles(dirty))
+        }
+        GraphicsProtocol::Sixel => {
+            let old = placed.shown.as_ref()?;
+            let new = sixel_shown(protocol, canvas, area, cell_pixels)?;
+            if (old.width(), old.height()) != (new.width(), new.height()) {
+                return None;
+            }
+            patches(&changed_cells(old, &new, area, cell_pixels), area)
+        }
+        GraphicsProtocol::Iterm2 => {
+            if !exact_cells(canvas, area, cell_pixels)
+                || !exact_cells(&placed.canvas, area, cell_pixels)
+            {
+                return None;
+            }
+            patches(
+                &changed_cells(&placed.canvas, canvas, area, cell_pixels),
+                area,
+            )
+        }
+    }
+}
+
+/// Groups changed cells into areas: consecutive rows with changes become one area, as wide
+/// as their changes. `None` when the areas would cover most of the image.
+fn patches(changed: &[bool], area: Rect) -> Option<Change> {
+    let columns = usize::from(area.width);
+    let mut areas = Vec::new();
+    let mut covered = 0;
+    let mut group: Option<(usize, usize, usize, usize)> = None;
+    let rows = changed.chunks(columns).map(|row| {
+        let first = row.iter().position(|&c| c)?;
+        let last = row.iter().rposition(|&c| c)?;
+        Some((first, last))
+    });
+    for (y, row) in rows.chain(std::iter::once(None)).enumerate() {
+        if let Some((first, last)) = row {
+            group = Some(match group {
+                Some((top, _, left, right)) => (top, y, left.min(first), right.max(last)),
+                None => (y, y, first, last),
+            });
+        } else if let Some((top, bottom, left, right)) = group.take() {
+            let patch = Rect::new(
+                area.x + u16::try_from(left).unwrap_or(0),
+                area.y + u16::try_from(top).unwrap_or(0),
+                u16::try_from(right - left + 1).unwrap_or(0),
+                u16::try_from(bottom - top + 1).unwrap_or(0),
+            );
+            covered += patch.area();
+            areas.push(patch);
+        }
+    }
+    (covered * 100 < area.area() * PATCH_LIMIT_PERCENT).then_some(Change::Patches(areas))
 }
 
 /// Encodes one image for `graphics` at the cursor position.
@@ -723,7 +1060,12 @@ fn write_image(
                 max_colors: sixel_colors.clamp(2, 256),
                 dither: false,
             };
-            sixel.encode(&image.canvas.scaled(width, height), options, out);
+            match &image.shown {
+                Some(shown) if (shown.width(), shown.height()) == (width, height) => {
+                    sixel.encode(shown, options, out);
+                }
+                _ => sixel.encode(&image.canvas.scaled(width, height), options, out),
+            }
         }
         GraphicsProtocol::Iterm2 => {
             #[cfg(feature = "png")]
@@ -733,6 +1075,92 @@ fn write_image(
             }
         }
     }
+}
+
+/// Sends one area (in cells) of a Sixel or iTerm2 image at the cursor.
+fn write_patch(
+    graphics: GraphicsProtocol,
+    image: &PlacedImage,
+    area: Rect,
+    cell_pixels: (u16, u16),
+    sixel_colors: u16,
+    sixel: &mut protocol::sixel::Encoder,
+    out: &mut Vec<u8>,
+) {
+    let (cell_width, cell_height) = (u32::from(cell_pixels.0), u32::from(cell_pixels.1));
+    let x = u32::from(area.x - image.area.x) * cell_width;
+    let y = u32::from(area.y - image.area.y) * cell_height;
+    let (width, height) = (
+        u32::from(area.width) * cell_width,
+        u32::from(area.height) * cell_height,
+    );
+    match graphics {
+        GraphicsProtocol::Sixel => {
+            if let Some(shown) = &image.shown {
+                let options = protocol::sixel::SixelOptions {
+                    max_colors: sixel_colors.clamp(2, 256),
+                    dither: false,
+                };
+                sixel.encode(&crop(shown, x, y, width, height), options, out);
+            }
+        }
+        GraphicsProtocol::Iterm2 => {
+            #[cfg(feature = "png")]
+            {
+                let part = crop(&image.canvas, x, y, width, height);
+                // An image that cannot be encoded is simply not shown.
+                let _ = protocol::iterm2::encode(&part, area.width, area.height, out);
+            }
+        }
+        GraphicsProtocol::Kitty => {}
+    }
+}
+
+/// Sends tile `tile` of a tiled Kitty image at its position.
+fn write_tile(image: &PlacedImage, tile: usize, out: &mut Vec<u8>) -> io::Result<()> {
+    let Some(tiles) = &image.tiles else {
+        return Ok(());
+    };
+    let area = tiles.area(image.area, tile);
+    // Tiled images have whole cells of pixels.
+    let cell_width = image.canvas.width() / u32::from(image.area.width.max(1));
+    let cell_height = image.canvas.height() / u32::from(image.area.height.max(1));
+    let part = crop(
+        &image.canvas,
+        u32::from(area.x - image.area.x) * cell_width,
+        u32::from(area.y - image.area.y) * cell_height,
+        u32::from(area.width) * cell_width,
+        u32::from(area.height) * cell_height,
+    );
+    ansi::move_to(out, area.x, area.y)?;
+    let placement = protocol::kitty::Placement {
+        id: tiles.ids[tile],
+        columns: area.width,
+        rows: area.height,
+        z_index: 0,
+    };
+    protocol::kitty::transmit_and_place_with(
+        &part,
+        placement,
+        protocol::kitty::Options::default(),
+        out,
+    );
+    Ok(())
+}
+
+/// The `width` × `height` pixels of `canvas` starting at `(x, y)` (clipped).
+fn crop(canvas: &Canvas, x: u32, y: u32, width: u32, height: u32) -> Canvas {
+    let x = x.min(canvas.width());
+    let y = y.min(canvas.height());
+    let width = width.min(canvas.width() - x);
+    let height = height.min(canvas.height() - y);
+    let stride = canvas.width() as usize;
+    let mut pixels = Vec::with_capacity(width as usize * height as usize);
+    for row in y..y + height {
+        let start = row as usize * stride + x as usize;
+        pixels.extend_from_slice(&canvas.pixels()[start..start + width as usize]);
+    }
+    Canvas::from_pixels(width, height, pixels).unwrap_or_else(|| Canvas::new(0, 0))
 }
 
 /// Copies the cells of `area` from `from` to `to`.
@@ -1101,17 +1529,18 @@ mod tests {
             assert_eq!(sequences(&mut terminal), Vec::<String>::new());
 
             // A different image: the new one is sent, the old one deleted.
+            // (The id is kept: the old data is freed, then the new image takes its place.)
             terminal
                 .draw(|f| f.draw_image(area, &image(Rgba::rgb(0, 0, 255))))
                 .unwrap();
             let sent = sequences(&mut terminal);
             assert_eq!(sent.len(), 2, "{sent:?}");
             assert_eq!(sent[0], "\x1b_Ga=d,d=I,i=1,q=2\x1b\\");
-            assert!(sent[1].contains(",i=2,"));
+            assert!(sent[1].contains(",i=1,"));
 
             // No image: deleted.
             terminal.draw(|_| {}).unwrap();
-            assert_eq!(sequences(&mut terminal), ["\x1b_Ga=d,d=I,i=2,q=2\x1b\\"]);
+            assert_eq!(sequences(&mut terminal), ["\x1b_Ga=d,d=I,i=1,q=2\x1b\\"]);
         }
 
         #[test]
@@ -1253,6 +1682,109 @@ mod tests {
             sequences(&mut terminal);
             terminal.leave_mode().unwrap();
             assert_eq!(sequences(&mut terminal), ["\x1b_Ga=d,d=A,q=2\x1b\\"]);
+        }
+
+        /// A canvas of `columns` × `rows` cells of 10 × 20 pixels (the fallback cell size).
+        fn exact(columns: u32, rows: u32, color: Rgba) -> Canvas {
+            Canvas::filled(columns * 10, rows * 20, color)
+        }
+
+        /// The cursor positions (1-based `row;column`) that start image sequences.
+        fn image_positions(terminal: &Terminal<TestBackend>, start: &str) -> Vec<String> {
+            let output = String::from_utf8_lossy(terminal.backend().output()).into_owned();
+            output
+                .match_indices(start)
+                .filter_map(|(at, _)| {
+                    let before = &output[..at];
+                    let csi = before.rfind("\x1b[")?;
+                    before[csi..].strip_suffix('H').map(|p| p[2..].to_owned())
+                })
+                .collect()
+        }
+
+        #[test]
+        fn sixel_images_send_only_the_cells_that_changed() {
+            let mut terminal = with_mode(SIXEL, 12, 6);
+            let area = Rect::new(1, 1, 6, 3);
+            let mut picture = exact(6, 3, Rgba::rgb(10, 20, 30));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 1);
+            assert!(sent[0].contains("\"1;1;60;60"), "the whole image first");
+
+            // One pixel in cell (2, 1) of the image: only that cell is sent.
+            picture.pixel(25, 30, Rgba::rgb(250, 0, 0));
+            terminal.backend_mut().take_output();
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 1, "{sent:?}");
+            assert!(sent[0].contains("\"1;1;10;20"), "one cell");
+            assert_eq!(image_positions(&terminal, "\x1bP"), ["3;4"]);
+
+            // Changes in two separate rows of cells: two patches.
+            picture.pixel(5, 5, Rgba::rgb(0, 250, 0));
+            picture.pixel(55, 45, Rgba::rgb(0, 0, 250));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 2, "{sent:?}");
+
+            // Most of the image changed: the whole image again.
+            let other = exact(6, 3, Rgba::rgb(200, 200, 200));
+            terminal.draw(|f| f.draw_image(area, &other)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 1);
+            assert!(sent[0].contains("\"1;1;60;60"));
+        }
+
+        #[test]
+        fn kitty_images_at_cell_resolution_are_tiled() {
+            let mut terminal = with_mode(KITTY, 20, 10);
+            let area = Rect::new(0, 0, 16, 8);
+            let mut picture = exact(16, 8, Rgba::rgb(10, 20, 30));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            // Tiles of 4 × 2 cells: 4 × 4 tiles.
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 16, "{}", sent.len());
+            assert!(sent.iter().all(|s| s.contains(",c=4,r=2,")));
+
+            // A pixel in the third tile of the second row: only that tile.
+            picture.pixel(85, 50, Rgba::rgb(255, 0, 0));
+            terminal.backend_mut().take_output();
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 2, "{sent:?}");
+            assert!(
+                sent[0].starts_with("\x1b_Ga=d,d=I,i="),
+                "the old tile is freed"
+            );
+            assert!(sent[1].starts_with("\x1b_Ga=T,f=100,"));
+            assert_eq!(image_positions(&terminal, "\x1b_Ga=T"), ["3;9"]);
+
+            // Removed: every tile is deleted.
+            terminal.draw(|_| {}).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 16);
+            assert!(sent.iter().all(|s| s.starts_with("\x1b_Ga=d,d=I,")));
+
+            // Images that are not at cell resolution stay one image.
+            terminal
+                .draw(|f| f.draw_image(area, &Canvas::filled(7, 7, Rgba::WHITE)))
+                .unwrap();
+            assert_eq!(sequences(&mut terminal).len(), 1);
+        }
+
+        #[test]
+        fn iterm2_images_at_cell_resolution_send_patches() {
+            let mut terminal = with_mode(ITERM2, 12, 6);
+            let area = Rect::new(0, 0, 4, 2);
+            let mut picture = exact(4, 2, Rgba::rgb(10, 20, 30));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            assert!(sequences(&mut terminal)[0].contains(";width=4;height=2;"));
+            picture.pixel(35, 5, Rgba::rgb(250, 0, 0));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 1);
+            assert!(sent[0].contains(";width=1;height=1;"), "{}", &sent[0][..60]);
         }
 
         #[test]
