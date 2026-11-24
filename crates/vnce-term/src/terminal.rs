@@ -273,6 +273,8 @@ struct ImageState {
     /// Whether Kitty images may be on the screen (they survive clearing the screen).
     kitty_shown: bool,
     next_id: u32,
+    /// Keeps the Sixel palette from frame to frame (faster, no color flicker).
+    sixel: protocol::sixel::Encoder,
 }
 
 impl Terminal<CrosstermBackend> {
@@ -325,6 +327,7 @@ impl<B: Backend> Terminal<B> {
                 placed: Vec::new(),
                 kitty_shown: false,
                 next_id: 1,
+                sixel: protocol::sixel::Encoder::new(),
             },
         })
     }
@@ -568,7 +571,14 @@ impl<B: Backend> Terminal<B> {
             for index in sends {
                 let image = &self.images.placed[index];
                 ansi::move_to(out, image.area.x, image.area.y)?;
-                write_image(graphics, image, cell_pixels, sixel_colors, out);
+                write_image(
+                    graphics,
+                    image,
+                    cell_pixels,
+                    sixel_colors,
+                    &mut self.images.sixel,
+                    out,
+                );
                 if graphics == GraphicsProtocol::Kitty {
                     self.images.kitty_shown = true;
                 }
@@ -686,6 +696,7 @@ fn write_image(
     image: &PlacedImage,
     cell_pixels: (u16, u16),
     sixel_colors: u16,
+    sixel: &mut protocol::sixel::Encoder,
     out: &mut Vec<u8>,
 ) {
     let area = image.area;
@@ -712,7 +723,7 @@ fn write_image(
                 max_colors: sixel_colors.clamp(2, 256),
                 dither: false,
             };
-            protocol::sixel::encode(&image.canvas.scaled(width, height), options, out);
+            sixel.encode(&image.canvas.scaled(width, height), options, out);
         }
         GraphicsProtocol::Iterm2 => {
             #[cfg(feature = "png")]

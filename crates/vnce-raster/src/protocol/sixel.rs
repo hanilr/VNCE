@@ -33,13 +33,87 @@ type Rgb = [u8; 3];
 /// Appends `canvas` as one Sixel image (a complete DCS sequence) to `out`. The image is
 /// drawn at the cursor position. Nothing is written for an empty canvas.
 pub fn encode(canvas: &Canvas, options: SixelOptions, out: &mut Vec<u8>) {
-    let (width, height) = (canvas.width() as usize, canvas.height() as usize);
-    if width == 0 || height == 0 {
-        return;
+    Encoder::new().encode(canvas, options, out);
+}
+
+/// Encodes a sequence of images (for example the frames of a game), reusing the palette
+/// while the colors stay about the same: encoding is faster, and colors do not flicker from
+/// frame to frame. A new palette is made when more than 2 % of the pixels fall outside the
+/// colors the current one was made for.
+#[derive(Default)]
+pub struct Encoder {
+    cache: Option<Cached>,
+}
+
+/// A palette kept for the next images.
+struct Cached {
+    palette: Palette,
+    /// The histogram bins of the image the palette was made for.
+    bins: Vec<bool>,
+    max_colors: usize,
+    /// Whether the last image reused this palette.
+    reused: bool,
+}
+
+impl std::fmt::Debug for Encoder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Encoder")
+            .field(
+                "palette",
+                &self.cache.as_ref().map(|c| c.palette.colors.len()),
+            )
+            .finish()
     }
-    let max_colors = usize::from(options.max_colors.clamp(1, 256));
-    let palette = build_palette(canvas.pixels(), max_colors);
-    let indices = map_pixels(canvas.pixels(), width, &palette, options.dither);
+}
+
+impl Encoder {
+    /// An encoder without a palette yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` if the last image reused the palette of the one before.
+    #[must_use]
+    pub fn reused_palette(&self) -> bool {
+        self.cache.as_ref().is_some_and(|c| c.reused)
+    }
+
+    /// Appends `canvas` as one Sixel image, like [`encode`].
+    pub fn encode(&mut self, canvas: &Canvas, options: SixelOptions, out: &mut Vec<u8>) {
+        let (width, height) = (canvas.width() as usize, canvas.height() as usize);
+        if width == 0 || height == 0 {
+            return;
+        }
+        let max_colors = usize::from(options.max_colors.clamp(1, 256));
+        let histogram = Histogram::of(canvas.pixels());
+        let reuse = self.cache.as_ref().is_some_and(|cache| {
+            cache.max_colors == max_colors && histogram.covered_by(&cache.bins)
+        });
+        if reuse {
+            if let Some(cache) = &mut self.cache {
+                cache.reused = true;
+            }
+        } else {
+            self.cache = Some(Cached {
+                palette: build_palette(canvas.pixels(), &histogram, max_colors),
+                bins: histogram.counts.iter().map(|&c| c > 0).collect(),
+                max_colors,
+                reused: false,
+            });
+        }
+        let Some(cache) = &mut self.cache else {
+            return;
+        };
+        write(canvas, options, &mut cache.palette, out);
+    }
+}
+
+/// Writes the image with `palette`.
+fn write(canvas: &Canvas, options: SixelOptions, palette: &mut Palette, out: &mut Vec<u8>) {
+    let (width, height) = (canvas.width() as usize, canvas.height() as usize);
+    let indices = map_pixels(canvas.pixels(), width, palette, options.dither);
+    let palette = &palette.colors;
 
     // DCS P1;P2;P3 q: P2 = 1 keeps pixels without a color transparent.
     out.extend_from_slice(b"\x1bP0;1;0q");
@@ -56,42 +130,135 @@ pub fn encode(canvas: &Canvas, options: SixelOptions, out: &mut Vec<u8>) {
         );
     }
 
-    let mut row = vec![0u8; width];
-    for band in (0..height).step_by(6) {
+    let bands: Vec<usize> = (0..height).step_by(6).collect();
+    // Bands are independent: large images are encoded on several threads, in contiguous
+    // groups of bands joined in order, so the output is the same as on one thread.
+    let threads = if width * height < PARALLEL_PIXELS {
+        1
+    } else {
+        std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(bands.len())
+    };
+    if threads <= 1 {
+        let mut band_encoder = BandEncoder::new(width);
+        for &band in &bands {
+            band_encoder.encode(&indices, height, band, out);
+        }
+    } else {
+        let per_thread = bands.len().div_ceil(threads);
+        let parts: Vec<Vec<u8>> = std::thread::scope(|scope| {
+            let workers: Vec<_> = bands
+                .chunks(per_thread)
+                .map(|group| {
+                    let indices = &indices;
+                    scope.spawn(move || {
+                        let mut band_encoder = BandEncoder::new(width);
+                        let mut part = Vec::new();
+                        for &band in group {
+                            band_encoder.encode(indices, height, band, &mut part);
+                        }
+                        part
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap_or_default())
+                .collect()
+        });
+        for part in parts {
+            out.extend_from_slice(&part);
+        }
+    }
+    out.extend_from_slice(b"\x1b\\");
+}
+
+/// Images with at least this many pixels are encoded on several threads.
+const PARALLEL_PIXELS: usize = 200_000;
+
+/// Encodes bands of six rows, reusing its buffers from band to band.
+struct BandEncoder {
+    width: usize,
+    /// Sixel bits of each color used in the band, one row of `width` per slot.
+    rows: Vec<u8>,
+    /// The slot of each palette index in this band (`u16::MAX` = not used).
+    slot_of: [u16; 256],
+    /// Palette index, first and last column of each slot.
+    slots: Vec<(u8, usize, usize)>,
+}
+
+impl BandEncoder {
+    fn new(width: usize) -> Self {
+        Self {
+            width,
+            rows: Vec::new(),
+            slot_of: [u16::MAX; 256],
+            slots: Vec::new(),
+        }
+    }
+
+    /// Appends the band starting at row `band`, and a graphics new line if another band
+    /// follows.
+    fn encode(&mut self, indices: &[Option<u8>], height: usize, band: usize, out: &mut Vec<u8>) {
+        let width = self.width;
         let band_rows = (height - band).min(6);
-        let mut colors: Vec<u8> = indices[band * width..(band + band_rows) * width]
-            .iter()
-            .flatten()
-            .copied()
-            .collect();
-        colors.sort_unstable();
-        colors.dedup();
-        for (n, &color) in colors.iter().enumerate() {
+        // One pass over the band collects the bits of every color it uses.
+        for dy in 0..band_rows {
+            let row = &indices[(band + dy) * width..(band + dy + 1) * width];
+            for (x, index) in row.iter().enumerate() {
+                let Some(color) = *index else {
+                    continue;
+                };
+                let mut slot = self.slot_of[usize::from(color)];
+                if slot == u16::MAX {
+                    slot = u16::try_from(self.slots.len()).unwrap_or(u16::MAX);
+                    self.slot_of[usize::from(color)] = slot;
+                    self.slots.push((color, x, x));
+                    let needed = self.slots.len() * width;
+                    if self.rows.len() < needed {
+                        self.rows.resize(needed, 0);
+                    }
+                }
+                let entry = &mut self.slots[usize::from(slot)];
+                entry.1 = entry.1.min(x);
+                entry.2 = entry.2.max(x);
+                self.rows[usize::from(slot) * width + x] |= 1 << dy;
+            }
+        }
+        // Colors in ascending order, as before, so the output stays deterministic.
+        let mut order: Vec<usize> = (0..self.slots.len()).collect();
+        order.sort_unstable_by_key(|&slot| self.slots[slot].0);
+        for (n, &slot) in order.iter().enumerate() {
+            let (color, first, last) = self.slots[slot];
             if n > 0 {
                 // Graphics carriage return: back to the start of the band.
                 out.push(b'$');
             }
             let _ = write!(out, "#{color}");
-            for (x, bits) in row.iter_mut().enumerate() {
-                *bits = 0;
-                for dy in 0..band_rows {
-                    if indices[(band + dy) * width + x] == Some(color) {
-                        *bits |= 1 << dy;
-                    }
-                }
-            }
-            let used = row
-                .iter()
-                .rposition(|&bits| bits != 0)
-                .map_or(0, |last| last + 1);
-            write_runs(&row[..used], out);
+            let row = &mut self.rows[slot * width..(slot + 1) * width];
+            // Columns before the first one used are empty: one run of zero bits.
+            write_runs_of_zero(first, out);
+            write_runs(&row[first..=last], out);
+            row[first..=last].fill(0);
+            self.slot_of[usize::from(color)] = u16::MAX;
         }
+        self.slots.clear();
         if band + 6 < height {
             // Graphics new line: next band.
             out.push(b'-');
         }
     }
-    out.extend_from_slice(b"\x1b\\");
+}
+
+/// Writes `count` empty sixels, the same way [`write_runs`] would.
+fn write_runs_of_zero(count: usize, out: &mut Vec<u8>) {
+    if count >= 4 {
+        let _ = write!(out, "!{count}");
+        out.push(63);
+    } else {
+        out.extend(std::iter::repeat_n(63, count));
+    }
 }
 
 /// Writes sixel values with run-length encoding (`!count char`) for runs of 4 or more.
@@ -115,19 +282,176 @@ fn is_opaque(pixel: Rgba) -> bool {
     pixel.a >= 128
 }
 
+/// Number of histogram bins: 5 bits per channel.
+const BINS: usize = 1 << 15;
+
+/// The histogram bin of a color.
+fn bin(color: Rgb) -> usize {
+    (usize::from(color[0] >> 3) << 10)
+        | (usize::from(color[1] >> 3) << 5)
+        | usize::from(color[2] >> 3)
+}
+
+/// Lookup table entry: not computed yet.
+const UNSET: u16 = u16::MAX;
+/// Lookup table entry: several exact palette colors share this bin; search them.
+const SEARCH: u16 = u16::MAX - 1;
+
+/// The colors of an image and a table from histogram bins to palette indices.
+struct Palette {
+    colors: Vec<Rgb>,
+    lookup: Vec<u16>,
+}
+
+impl Palette {
+    fn new(colors: Vec<Rgb>) -> Self {
+        Self {
+            colors,
+            lookup: vec![UNSET; BINS],
+        }
+    }
+
+    /// The palette index closest to `color`.
+    fn index(&mut self, color: Rgb) -> u8 {
+        let bin = bin(color);
+        let entry = self.lookup[bin];
+        match entry {
+            SEARCH => nearest(&self.colors, color),
+            UNSET => {
+                // The middle of the bin stands for every color in it.
+                let center = color.map(|c| (c & !7) | 4);
+                let index = nearest(&self.colors, center);
+                self.lookup[bin] = u16::from(index);
+                index
+            }
+            index => u8::try_from(index).unwrap_or(u8::MAX),
+        }
+    }
+}
+
+/// The index of the palette color closest to `color`.
+fn nearest(palette: &[Rgb], color: Rgb) -> u8 {
+    let distance = |p: &Rgb| -> u32 {
+        (0..3)
+            .map(|i| u32::from(p[i].abs_diff(color[i])).pow(2))
+            .sum()
+    };
+    let best = palette
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, p)| distance(p))
+        .map_or(0, |(index, _)| index);
+    u8::try_from(best).unwrap_or(u8::MAX)
+}
+
+/// Colors of an image counted in bins of 5 bits per channel.
+struct Histogram {
+    counts: Vec<u32>,
+    sums: Vec<[u64; 3]>,
+    // The first exact color seen in each bin, and whether other colors share the bin.
+    first: Vec<Rgb>,
+    mixed: Vec<bool>,
+}
+
+impl Histogram {
+    fn of(pixels: &[Rgba]) -> Self {
+        let mut histogram = Self {
+            counts: vec![0; BINS],
+            sums: vec![[0; 3]; BINS],
+            first: vec![[0; 3]; BINS],
+            mixed: vec![false; BINS],
+        };
+        for &p in pixels.iter().filter(|&&p| is_opaque(p)) {
+            let color = [p.r, p.g, p.b];
+            let b = bin(color);
+            if histogram.counts[b] == 0 {
+                histogram.first[b] = color;
+            } else if histogram.first[b] != color {
+                histogram.mixed[b] = true;
+            }
+            histogram.counts[b] += 1;
+            for (sum, &c) in histogram.sums[b].iter_mut().zip(&color) {
+                *sum += u64::from(c);
+            }
+        }
+        histogram
+    }
+
+    /// Returns `true` if at least 98 % of the pixels fall into `bins`.
+    fn covered_by(&self, bins: &[bool]) -> bool {
+        let (mut total, mut covered) = (0_u64, 0_u64);
+        for (&count, &known) in self.counts.iter().zip(bins) {
+            total += u64::from(count);
+            if known {
+                covered += u64::from(count);
+            }
+        }
+        covered * 100 >= total * 98
+    }
+}
+
 /// The palette: the exact colors when there are few enough, otherwise median cut.
-fn build_palette(pixels: &[Rgba], max_colors: usize) -> Vec<Rgb> {
-    let mut counts: HashMap<Rgb, u32> = HashMap::new();
-    for &p in pixels.iter().filter(|&&p| is_opaque(p)) {
-        *counts.entry([p.r, p.g, p.b]).or_default() += 1;
+///
+/// Colors are counted in a histogram of 5 bits per channel (32 768 bins) instead of one
+/// entry per exact color, which is much faster on large images.
+fn build_palette(pixels: &[Rgba], histogram: &Histogram, max_colors: usize) -> Palette {
+    let Histogram {
+        counts,
+        sums,
+        first,
+        mixed,
+    } = histogram;
+    let used: Vec<usize> = (0..BINS).filter(|&b| counts[b] > 0).collect();
+
+    if used.len() <= max_colors {
+        if used.iter().all(|&b| !mixed[b]) {
+            // Every bin holds a single exact color: those are the palette.
+            let mut colors: Vec<Rgb> = used.iter().map(|&b| first[b]).collect();
+            // A stable order makes the output deterministic.
+            colors.sort_unstable();
+            let mut palette = Palette::new(colors);
+            for (index, color) in palette.colors.iter().enumerate() {
+                palette.lookup[bin(*color)] = u16::try_from(index).unwrap_or(0);
+            }
+            return palette;
+        }
+        // Few bins but close colors share some: count the exact colors.
+        let mut exact: HashMap<Rgb, u32> = HashMap::new();
+        for &p in pixels.iter().filter(|&&p| is_opaque(p)) {
+            *exact.entry([p.r, p.g, p.b]).or_default() += 1;
+        }
+        if exact.len() <= max_colors {
+            let mut colors: Vec<Rgb> = exact.into_keys().collect();
+            colors.sort_unstable();
+            let mut palette = Palette::new(colors);
+            for (index, color) in palette.colors.iter().enumerate() {
+                let b = bin(*color);
+                palette.lookup[b] = if mixed[b] {
+                    SEARCH
+                } else {
+                    u16::try_from(index).unwrap_or(0)
+                };
+            }
+            return palette;
+        }
     }
-    let mut colors: Vec<(Rgb, u32)> = counts.into_iter().collect();
-    // A stable order makes the output deterministic.
-    colors.sort_unstable();
-    if colors.len() <= max_colors {
-        return colors.into_iter().map(|(color, _)| color).collect();
+
+    // Median cut over the bins, each with its mean color and pixel count.
+    let entries: Vec<(Rgb, u32)> = used
+        .iter()
+        .map(|&b| {
+            let count = u64::from(counts[b]);
+            let mean = sums[b].map(|s| u8::try_from((s + count / 2) / count).unwrap_or(u8::MAX));
+            (mean, counts[b])
+        })
+        .collect();
+    let mut palette = Palette::new(median_cut(entries, max_colors));
+    for &b in &used {
+        let count = u64::from(counts[b]);
+        let mean = sums[b].map(|s| u8::try_from((s + count / 2) / count).unwrap_or(u8::MAX));
+        palette.lookup[b] = u16::from(nearest(&palette.colors, mean));
     }
-    median_cut(colors, max_colors)
+    palette
 }
 
 /// Splits the color space into `max_colors` boxes of similar weight and returns each box's
@@ -195,27 +519,16 @@ fn widest_channel(entries: &[(Rgb, u32)]) -> (usize, u8) {
 }
 
 /// Palette index of every pixel (`None` for transparent pixels).
-fn map_pixels(pixels: &[Rgba], width: usize, palette: &[Rgb], dither: bool) -> Vec<Option<u8>> {
-    let mut cache: HashMap<Rgb, u8> = HashMap::new();
-    let mut nearest = |color: Rgb| -> u8 {
-        *cache.entry(color).or_insert_with(|| {
-            let distance = |p: &Rgb| -> u32 {
-                (0..3)
-                    .map(|i| u32::from(p[i].abs_diff(color[i])).pow(2))
-                    .sum()
-            };
-            let best = palette
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, p)| distance(p))
-                .map_or(0, |(index, _)| index);
-            u8::try_from(best).unwrap_or(u8::MAX)
-        })
-    };
+fn map_pixels(
+    pixels: &[Rgba],
+    width: usize,
+    palette: &mut Palette,
+    dither: bool,
+) -> Vec<Option<u8>> {
     if !dither {
         return pixels
             .iter()
-            .map(|&p| is_opaque(p).then(|| nearest([p.r, p.g, p.b])))
+            .map(|&p| is_opaque(p).then(|| palette.index([p.r, p.g, p.b])))
             .collect();
     }
 
@@ -230,9 +543,9 @@ fn map_pixels(pixels: &[Rgba], width: usize, palette: &[Rgb], dither: bool) -> V
         let wanted: [f32; 3] =
             std::array::from_fn(|i| (f32::from(original[i]) + errors[index][i]).clamp(0.0, 255.0));
         let adjusted = wanted.map(crate::color::to_u8);
-        let chosen = nearest(adjusted);
+        let chosen = palette.index(adjusted);
         out[index] = Some(chosen);
-        let got = palette[usize::from(chosen)];
+        let got = palette.colors[usize::from(chosen)];
         let error: [f32; 3] = std::array::from_fn(|i| wanted[i] - f32::from(got[i]));
         let (x, y) = (index % width, index / width);
         let height = pixels.len() / width;
@@ -504,6 +817,78 @@ mod tests {
         let out = encoded(&Canvas::new(3, 7), SixelOptions::default());
         let (_, _, pixels) = decode(&out);
         assert!(pixels.iter().all(Option::is_none));
+    }
+
+    /// Asserts that `out` decodes to `canvas` (within the rounding of Sixel percentages).
+    fn assert_decodes_to(out: &[u8], canvas: &Canvas) {
+        let (_, _, pixels) = decode(out);
+        for (index, pixel) in canvas.pixels().iter().enumerate() {
+            let got = pixels[index].expect("opaque pixel");
+            let want = [pixel.r, pixel.g, pixel.b];
+            assert!(
+                got.iter().zip(&want).all(|(g, w)| g.abs_diff(*w) <= 2),
+                "pixel {index}: {got:?} vs {want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_encoder_reuses_the_palette_while_the_colors_stay() {
+        let background = Rgba::rgb(10, 20, 30);
+        let red = Rgba::rgb(250, 10, 10);
+        let mut encoder = Encoder::new();
+        let frame = |x: i32, color: Rgba| {
+            let mut canvas = Canvas::filled(30, 12, background);
+            canvas.fill_rect(x, 3, 6, 6, color);
+            canvas
+        };
+        let mut out = Vec::new();
+        encoder.encode(&frame(2, red), SixelOptions::default(), &mut out);
+        assert!(!encoder.reused_palette());
+        assert_decodes_to(&out, &frame(2, red));
+        // The square moved: same colors, same palette.
+        out.clear();
+        encoder.encode(&frame(12, red), SixelOptions::default(), &mut out);
+        assert!(encoder.reused_palette());
+        assert_decodes_to(&out, &frame(12, red));
+        // A new color covering more than 2 % of the image: a new palette.
+        let blue = Rgba::rgb(10, 10, 250);
+        out.clear();
+        encoder.encode(&frame(12, blue), SixelOptions::default(), &mut out);
+        assert!(!encoder.reused_palette());
+        assert_decodes_to(&out, &frame(12, blue));
+        // A different palette size: a new palette.
+        let small = SixelOptions {
+            max_colors: 16,
+            ..SixelOptions::default()
+        };
+        out.clear();
+        encoder.encode(&frame(12, blue), small, &mut out);
+        assert!(!encoder.reused_palette());
+        assert!(format!("{encoder:?}").contains("Encoder"));
+    }
+
+    #[test]
+    fn parallel_and_single_threaded_output_are_identical() {
+        // Large enough to be encoded on several threads.
+        let (width, height) = (700_u32, 300_u32);
+        let mut canvas = Canvas::new(width, height);
+        for y in 0..height {
+            for x in 0..width {
+                let color = Rgba::rgb((x % 256) as u8, (y % 256) as u8, ((x + y) % 7 * 30) as u8);
+                canvas.pixels_mut()[(y * width + x) as usize] = color;
+            }
+        }
+        let options = SixelOptions::default();
+        let parallel = encoded(&canvas, options);
+        let mut palette = build_palette(canvas.pixels(), &Histogram::of(canvas.pixels()), 256);
+        let indices = map_pixels(canvas.pixels(), width as usize, &mut palette, false);
+        let mut single = Vec::new();
+        let mut bands = BandEncoder::new(width as usize);
+        for band in (0..height as usize).step_by(6) {
+            bands.encode(&indices, height as usize, band, &mut single);
+        }
+        assert!(parallel.ends_with(&[&single[..], b"\\"].concat()));
     }
 
     #[test]
