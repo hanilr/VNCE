@@ -9,3 +9,6 @@
 
 /// Core types: geometry, colors, styles, cells and buffers.
 pub use vnce_core;
+
+/// Terminal output, double-buffered rendering and terminal backends.
+pub use vnce_term;

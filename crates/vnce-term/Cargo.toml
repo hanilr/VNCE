@@ -1,0 +1,23 @@
+[package]
+name = "vnce-term"
+description = "Cross-platform terminal output, double-buffered rendering and input for the Variation CLI Engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["terminal", "ansi", "tui", "input", "rendering"]
+categories = ["command-line-interface", "rendering"]
+
+[lib]
+name = "vnce_term"
+
+[lints]
+workspace = true
+
+[dependencies]
+crossterm.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+vnce-core.workspace = true
