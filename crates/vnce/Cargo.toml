@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/vnce"
 readme = "../../README.md"
 keywords = ["terminal", "graphics", "game-engine", "tui", "gpu"]
 categories = ["command-line-interface", "game-engines", "graphics", "rendering"]
@@ -43,3 +46,7 @@ required-features = ["gpu"]
 [[example]]
 name = "ui"
 required-features = ["ui"]
+
+# docs.rs documents every optional feature.
+[package.metadata.docs.rs]
+all-features = true

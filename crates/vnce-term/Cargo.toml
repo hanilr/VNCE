@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/vnce-term"
 readme = "../../README.md"
 keywords = ["terminal", "ansi", "tui", "input", "rendering"]
 categories = ["command-line-interface", "rendering"]
@@ -33,3 +36,7 @@ rustix.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+
+# docs.rs documents every optional feature.
+[package.metadata.docs.rs]
+all-features = true

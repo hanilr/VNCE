@@ -9,6 +9,8 @@ edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
 authors = ["Hakkı Anıl Ragıboğlu (hanilr) <77579421+hanilr@users.noreply.github.com>"]
+repository = "https://github.com/hanilr/VNCE"
+homepage = "https://github.com/hanilr/VNCE"
 
 # Lints shared by every crate in the workspace.
 [workspace.lints.rust]
