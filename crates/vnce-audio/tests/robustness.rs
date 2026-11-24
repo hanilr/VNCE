@@ -146,3 +146,22 @@ fn the_mixer_always_outputs_finite_samples_in_range() {
         assert!(mixer.playing() <= vnce_audio::MAX_VOICES);
     }
 }
+
+#[cfg(feature = "ogg")]
+#[test]
+fn broken_ogg_streams_never_panic() {
+    let mut rng = Rng(0x0067_6767);
+    for _ in 0..3_000 {
+        // An OGG page header with a Vorbis identification packet, then noise.
+        let mut bytes = b"OggS\0\x02\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\0\0\0\0\x01\x1e".to_vec();
+        bytes.extend_from_slice(b"\x01vorbis\0\0\0\0\x02\x44\xac\0\0");
+        bytes.extend((0..rng.below(300)).map(|_| rng.next() as u8));
+        for _ in 0..rng.below(4) {
+            let at = rng.below(bytes.len() as u64) as usize;
+            bytes[at] = rng.next() as u8;
+        }
+        if let Ok(sound) = Sound::decode(&bytes) {
+            assert!(sound.samples().iter().all(|s| s.is_finite()));
+        }
+    }
+}

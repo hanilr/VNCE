@@ -13,6 +13,8 @@
 //! This crate is part of the **Variation** ecosystem.
 
 pub mod mixer;
+#[cfg(feature = "ogg")]
+mod ogg;
 #[cfg(feature = "output")]
 pub mod output;
 pub mod sound;
