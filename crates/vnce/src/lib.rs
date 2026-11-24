@@ -5,7 +5,7 @@
 //!
 //! This crate is part of the **Variation** ecosystem.
 //!
-//! The project is in its early stages; there is no public API yet.
+//! The API is not stable yet.
 
 /// Core types: geometry, colors, styles, cells and buffers.
 pub use vnce_core;
