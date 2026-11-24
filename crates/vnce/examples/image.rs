@@ -160,6 +160,7 @@ fn measure(
             let options = sixel::SixelOptions {
                 max_colors: colors,
                 dither: false,
+                ..sixel::SixelOptions::default()
             };
             sixel::encode(&scaled, options, &mut out);
         }

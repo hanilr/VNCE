@@ -79,6 +79,11 @@ Speed (a 720p frame on the development machine):
   (whole images beyond 70 %); Kitty images at exact cell resolution are split into up to
   8 × 8 tiles and only changed tiles are sent. A sprite moving over a 1600 × 880 picture
   costs about 5 KB per frame.
+- In Windows Terminal (which applies the `"2;1` Sixel aspect ratio, checked in its source),
+  Sixel images are sent at half height with rows two pixels tall (`VNCE_SIXEL_ASPECT`;
+  only with an even cell height). Elsewhere, when writing a frame takes longer than 25 ms
+  (the terminal is behind), changed images wait up to 3 frames while text, input and game
+  logic keep their pace.
 
 ### Rendering model
 

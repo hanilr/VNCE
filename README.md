@@ -91,6 +91,8 @@ Environment overrides:
 - `VNCE_COLOR_DEPTH`: `truecolor`, `256`, `16` or `none`.
 - `VNCE_PIXEL_MODE`: `halfblock`, `quadrant`, `sextant`, `octant`, `braille` or `ascii`.
 - `VNCE_GRAPHICS`: `kitty`, `sixel`, `iterm2`, `cells` or a pixel mode name.
+- `VNCE_SIXEL_ASPECT`: `2` sends Sixel images at half height with rows two pixels tall
+  (on by default in Windows Terminal, which supports it), `1` turns it off.
 - `VNCE_GPU_BACKEND`: `vulkan`, `dx12`, `metal` or `gl` (comma-separated list).
 - `VNCE_GPU_POWER`: `high` (fastest GPU, default) or `low` (most power-efficient GPU).
 

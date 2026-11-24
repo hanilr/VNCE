@@ -17,6 +17,13 @@ pub struct SixelOptions {
     pub max_colors: u16,
     /// Floyd–Steinberg dithering: smoother gradients, more output.
     pub dither: bool,
+    /// Height of one image row on the screen, in pixels: 1, or 2 to send the image at half
+    /// its height and let the terminal draw every row twice (`"2;1` raster attributes): half
+    /// the rows to send and decode (about a third less data for game frames), at half the
+    /// vertical resolution. Only for
+    /// terminals that apply the ratio, such as Windows Terminal; others draw half-height
+    /// images.
+    pub pixel_aspect: u8,
 }
 
 impl Default for SixelOptions {
@@ -24,6 +31,7 @@ impl Default for SixelOptions {
         Self {
             max_colors: 256,
             dither: false,
+            pixel_aspect: 1,
         }
     }
 }
@@ -81,6 +89,13 @@ impl Encoder {
 
     /// Appends `canvas` as one Sixel image, like [`encode`].
     pub fn encode(&mut self, canvas: &Canvas, options: SixelOptions, out: &mut Vec<u8>) {
+        let half;
+        let canvas = if options.pixel_aspect >= 2 {
+            half = every_other_row(canvas);
+            &half
+        } else {
+            canvas
+        };
         let (width, height) = (canvas.width() as usize, canvas.height() as usize);
         if width == 0 || height == 0 {
             return;
@@ -109,6 +124,21 @@ impl Encoder {
     }
 }
 
+/// Rows 0, 2, 4, … of `canvas`: the image at half its height, for a pixel aspect of 2.
+/// Rows are picked, not averaged, so pixel art keeps its exact colors.
+fn every_other_row(canvas: &Canvas) -> Canvas {
+    let width = canvas.width() as usize;
+    let height = canvas.height().div_ceil(2);
+    let pixels = canvas
+        .pixels()
+        .chunks(width.max(1))
+        .step_by(2)
+        .flatten()
+        .copied()
+        .collect();
+    Canvas::from_pixels(canvas.width(), height, pixels).unwrap_or_else(|| Canvas::new(0, 0))
+}
+
 /// Writes the image with `palette`.
 fn write(canvas: &Canvas, options: SixelOptions, palette: &mut Palette, out: &mut Vec<u8>) {
     let (width, height) = (canvas.width() as usize, canvas.height() as usize);
@@ -118,7 +148,9 @@ fn write(canvas: &Canvas, options: SixelOptions, palette: &mut Palette, out: &mu
     // DCS P1;P2;P3 q: P2 = 1 keeps pixels without a color transparent.
     out.extend_from_slice(b"\x1bP0;1;0q");
     // Raster attributes: 1:1 pixel aspect ratio and the image size.
-    let _ = write!(out, "\"1;1;{width};{height}");
+    // (With a pixel aspect of 2, each row is two screen pixels tall: `"2;1`.)
+    let aspect = options.pixel_aspect.clamp(1, 2);
+    let _ = write!(out, "\"{aspect};1;{width};{}", height * usize::from(aspect));
     for (index, color) in palette.iter().enumerate() {
         let percent = |v: u8| (u32::from(v) * 100 + 127) / 255;
         let _ = write!(
@@ -773,7 +805,14 @@ mod tests {
             (16, true, 2000, 150),
             (256, false, 40, 40),
         ] {
-            let out = encoded(&canvas, SixelOptions { max_colors, dither });
+            let out = encoded(
+                &canvas,
+                SixelOptions {
+                    max_colors,
+                    dither,
+                    ..SixelOptions::default()
+                },
+            );
             // Color definitions look like `#index;2;r;g;b`.
             let definitions = out
                 .iter()
@@ -854,6 +893,43 @@ mod tests {
             assert!(
                 got.iter().zip(&want).all(|(g, w)| g.abs_diff(*w) <= 2),
                 "pixel {index}: {got:?} vs {want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tall_pixels_send_every_other_row() {
+        // Rows of different colors; with a pixel aspect of 2 only rows 0, 2 and 4 are sent.
+        let colors = [
+            Rgba::rgb(250, 0, 0),
+            Rgba::rgb(0, 250, 0),
+            Rgba::rgb(0, 0, 250),
+            Rgba::rgb(250, 250, 0),
+            Rgba::rgb(0, 250, 250),
+        ];
+        let mut canvas = Canvas::new(3, 5);
+        canvas.set_blend_mode(crate::BlendMode::Replace);
+        for (y, color) in (0_i32..).zip(&colors) {
+            canvas.fill_rect(0, y, 3, 1, *color);
+        }
+        let options = SixelOptions {
+            pixel_aspect: 2,
+            ..SixelOptions::default()
+        };
+        let out = encoded(&canvas, options);
+        let text = String::from_utf8_lossy(&out);
+        // Three rows drawn two screen pixels tall: six rows on the screen.
+        assert!(text.contains("\"2;1;3;6"), "{text}");
+        // The test decoder takes the declared (screen) size; the data has three rows.
+        let (width, height, pixels) = decode(&out);
+        assert_eq!((width, height), (3, 6));
+        assert!(pixels[9..].iter().all(Option::is_none));
+        for (row, color) in [colors[0], colors[2], colors[4]].iter().enumerate() {
+            let got = pixels[row * 3].expect("opaque");
+            let want = [color.r, color.g, color.b];
+            assert!(
+                got.iter().zip(&want).all(|(g, w)| g.abs_diff(*w) <= 2),
+                "row {row}"
             );
         }
     }

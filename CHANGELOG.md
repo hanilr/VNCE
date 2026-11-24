@@ -119,6 +119,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Graphics inside tmux and zellij: Sixel when the multiplexer draws it, Kitty in tmux
   through passthrough with Unicode placeholders (`vnce_term::tmux`,
   `kitty::transmit_virtual`, `kitty::placeholder`, `Terminal::set_tmux_passthrough`).
+- Sixel `pixel_aspect` (`"2;1`): half-height images with tall rows, used in Windows Terminal
+  (`Terminal::set_sixel_tall_pixels`, `VNCE_SIXEL_ASPECT`); elsewhere changed images wait
+  a few frames when the terminal falls behind.
 
 ### Changed
 

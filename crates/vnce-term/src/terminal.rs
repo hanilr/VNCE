@@ -1,6 +1,7 @@
 //! The double-buffered terminal.
 
 use std::io;
+use std::time::{Duration, Instant};
 
 use vnce_core::{Buffer, Color, Rect, Size, Style};
 use vnce_raster::{Canvas, PixelMode, RenderOptions, protocol};
@@ -290,6 +291,10 @@ impl Frame<'_> {
 /// # Ok::<(), std::io::Error>(())
 /// ```
 #[derive(Debug)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent settings and states of the terminal, not a state machine"
+)]
 pub struct Terminal<B: Backend> {
     backend: B,
     /// The frame being drawn and the previous frame, indexed by `current`.
@@ -310,6 +315,12 @@ pub struct Terminal<B: Backend> {
     /// Inside tmux: Kitty commands are wrapped for passthrough and images are shown with
     /// Unicode placeholders.
     tmux_passthrough: bool,
+    /// Sixel images are sent at half height with rows two pixels tall (terminals that
+    /// apply the `"2;1` aspect ratio: Windows Terminal).
+    sixel_tall_pixels: bool,
+    /// Frames left in which changed images are not sent, because the terminal was slow to
+    /// take the last frame (used when tall Sixel pixels are not).
+    deferred_frames: u8,
 }
 
 /// Bookkeeping for images shown with a graphics protocol.
@@ -326,6 +337,9 @@ struct ImageState {
     free_ids: Vec<u32>,
     /// Kitty images are shown with Unicode placeholders (inside tmux).
     placeholders: bool,
+    /// Changed images keep their old content on the screen this frame (the terminal is
+    /// catching up).
+    defer: bool,
     /// Keeps the Sixel palette from frame to frame (faster, no color flicker).
     sixel: protocol::sixel::Encoder,
 }
@@ -376,6 +390,8 @@ impl<B: Backend> Terminal<B> {
             frame_count: 0,
             graphics: GraphicsMode::Cells(PixelMode::detect(capabilities.color_depth)),
             tmux_passthrough: false,
+            sixel_tall_pixels: false,
+            deferred_frames: 0,
             images: ImageState {
                 requests: Vec::new(),
                 placed: Vec::new(),
@@ -383,6 +399,7 @@ impl<B: Backend> Terminal<B> {
                 next_id: 1,
                 free_ids: Vec::new(),
                 placeholders: false,
+                defer: false,
                 sixel: protocol::sixel::Encoder::new(),
             },
         })
@@ -403,6 +420,7 @@ impl<B: Backend> Terminal<B> {
         self.info = self.backend.terminal_info();
         self.graphics = GraphicsMode::detect(&self.info, &self.capabilities);
         self.tmux_passthrough = crate::tmux::inside();
+        self.sixel_tall_pixels = sixel_tall_pixels(|name| std::env::var(name).ok());
         Ok(())
     }
 
@@ -418,6 +436,24 @@ impl<B: Backend> Terminal<B> {
     pub fn set_graphics_mode(&mut self, mode: GraphicsMode) {
         if mode != self.graphics {
             self.graphics = mode;
+            self.full_redraw = true;
+        }
+    }
+
+    /// Whether Sixel images are sent at half height with rows two pixels tall: half the
+    /// data and drawing work for the terminal. Detected when entering: on in Windows
+    /// Terminal (which applies the `"2;1` aspect ratio), and set by `VNCE_SIXEL_ASPECT`
+    /// (`2` on, `1` off). Used only when the cell height is even.
+    #[must_use]
+    pub fn sixel_tall_pixels(&self) -> bool {
+        self.sixel_tall_pixels
+    }
+
+    /// Turns tall Sixel pixels on or off (see [`Terminal::sixel_tall_pixels`]). The next
+    /// frame is fully redrawn.
+    pub fn set_sixel_tall_pixels(&mut self, on: bool) {
+        if on != self.sixel_tall_pixels {
+            self.sixel_tall_pixels = on;
             self.full_redraw = true;
         }
     }
@@ -587,7 +623,13 @@ impl<B: Backend> Terminal<B> {
     fn flush(&mut self) -> io::Result<()> {
         let capabilities = self.capabilities;
         let cell_pixels = self.cell_pixels();
-        let sixel_colors = self.info.sixel_colors.unwrap_or(256);
+        // Tall Sixel pixels need an even cell height, so patches start on a whole row.
+        let tall_pixels = self.sixel_tall_pixels && cell_pixels.1.is_multiple_of(2);
+        let sixel_options = protocol::sixel::SixelOptions {
+            max_colors: self.info.sixel_colors.unwrap_or(256).clamp(2, 256),
+            dither: false,
+            pixel_aspect: if tall_pixels { 2 } else { 1 },
+        };
         let (first, second) = self.buffers.split_at_mut(1);
         let (current, previous) = if self.current == 0 {
             (&mut first[0], &mut second[0])
@@ -614,6 +656,8 @@ impl<B: Backend> Terminal<B> {
         }
 
         self.images.placeholders = self.tmux_passthrough;
+        self.images.defer = self.deferred_frames > 0 && !tall_pixels && !self.full_redraw;
+        self.deferred_frames = self.deferred_frames.saturating_sub(1);
         let sends = self.images.plan(
             self.graphics,
             self.full_redraw,
@@ -651,7 +695,7 @@ impl<B: Backend> Terminal<B> {
         // Images go on top of the cells written above.
         if let GraphicsMode::Protocol(graphics) = self.graphics {
             self.images
-                .write(graphics, sends, cell_pixels, sixel_colors, out)?;
+                .write(graphics, sends, cell_pixels, sixel_options, out)?;
         }
 
         ansi::reset_style(out)?;
@@ -662,8 +706,14 @@ impl<B: Backend> Terminal<B> {
         if self.tmux_passthrough {
             *out = crate::tmux::wrap_kitty(out);
         }
+        let started = Instant::now();
         self.backend.write_all(out)?;
         self.backend.flush()?;
+        // A slow write means the terminal could not keep up (its input was full): changed
+        // images wait a few frames. Not needed with tall Sixel pixels, which halve the work.
+        if !tall_pixels && matches!(self.graphics, GraphicsMode::Protocol(_)) {
+            self.deferred_frames = self.deferred_frames.max(frames_to_defer(started.elapsed()));
+        }
         self.full_redraw = false;
         Ok(())
     }
@@ -732,6 +782,13 @@ impl ImageState {
                         }
                     } else {
                         sends.push(ImageSend::Full(index));
+                    }
+                    self.placed.push(placed);
+                }
+                // The terminal is catching up: the old image stays for now.
+                (Some(placed), Some(_)) if self.defer && can_update => {
+                    if !kitty {
+                        copy_cells(previous, current, request.area);
                     }
                     self.placed.push(placed);
                 }
@@ -874,7 +931,7 @@ impl ImageState {
         graphics: GraphicsProtocol,
         sends: Vec<ImageSend>,
         cell_pixels: (u16, u16),
-        sixel_colors: u16,
+        sixel_options: protocol::sixel::SixelOptions,
         out: &mut Vec<u8>,
     ) -> io::Result<()> {
         let sixel = &mut self.sixel;
@@ -892,7 +949,7 @@ impl ImageState {
                             graphics,
                             image,
                             cell_pixels,
-                            sixel_colors,
+                            sixel_options,
                             sixel,
                             self.placeholders,
                             out,
@@ -903,7 +960,15 @@ impl ImageState {
                     let image = &self.placed[index];
                     for area in areas {
                         ansi::move_to(out, area.x, area.y)?;
-                        write_patch(graphics, image, area, cell_pixels, sixel_colors, sixel, out);
+                        write_patch(
+                            graphics,
+                            image,
+                            area,
+                            cell_pixels,
+                            sixel_options,
+                            sixel,
+                            out,
+                        );
                     }
                 }
                 ImageSend::Tiles(index, tiles) => {
@@ -944,6 +1009,31 @@ enum Change {
 /// Sends patches only while they cover less than this share of the image; beyond it, one
 /// whole image is cheaper.
 const PATCH_LIMIT_PERCENT: usize = 70;
+
+/// Whether to use tall Sixel pixels: `VNCE_SIXEL_ASPECT` (`2` or `1`) decides, otherwise
+/// only Windows Terminal (`WT_SESSION`), the terminal known to apply the `"2;1` ratio.
+fn sixel_tall_pixels(env: impl Fn(&str) -> Option<String>) -> bool {
+    match env("VNCE_SIXEL_ASPECT").as_deref().map(str::trim) {
+        Some("2") => true,
+        Some("1") => false,
+        _ => env("WT_SESSION").is_some(),
+    }
+}
+
+/// Writing a frame that takes longer than this means the terminal is behind.
+const SLOW_WRITE: Duration = Duration::from_millis(25);
+
+/// How many frames to skip changed images for after a write that took `write`: none
+/// when the terminal keeps up, one per 16 ms of delay otherwise (at most 3), so it can catch
+/// up while text, input and game logic keep their pace.
+fn frames_to_defer(write: Duration) -> u8 {
+    if write < SLOW_WRITE {
+        return 0;
+    }
+    u8::try_from(write.as_millis() / 16)
+        .unwrap_or(u8::MAX)
+        .clamp(1, 3)
+}
 
 /// Returns `true` if `canvas` has exactly the pixels of the cells of `area`, so its parts
 /// map onto whole cells.
@@ -1084,7 +1174,7 @@ fn write_image(
     graphics: GraphicsProtocol,
     image: &PlacedImage,
     cell_pixels: (u16, u16),
-    sixel_colors: u16,
+    sixel_options: protocol::sixel::SixelOptions,
     sixel: &mut protocol::sixel::Encoder,
     placeholders: bool,
     out: &mut Vec<u8>,
@@ -1096,10 +1186,7 @@ fn write_image(
             // Sixel draws pixels 1:1, so the image is scaled to the exact size of its area.
             let width = u32::from(area.width) * u32::from(cell_pixels.0);
             let height = u32::from(area.height) * u32::from(cell_pixels.1);
-            let options = protocol::sixel::SixelOptions {
-                max_colors: sixel_colors.clamp(2, 256),
-                dither: false,
-            };
+            let options = sixel_options;
             match &image.shown {
                 Some(shown) if (shown.width(), shown.height()) == (width, height) => {
                     sixel.encode(shown, options, out);
@@ -1123,7 +1210,7 @@ fn write_patch(
     image: &PlacedImage,
     area: Rect,
     cell_pixels: (u16, u16),
-    sixel_colors: u16,
+    sixel_options: protocol::sixel::SixelOptions,
     sixel: &mut protocol::sixel::Encoder,
     out: &mut Vec<u8>,
 ) {
@@ -1137,10 +1224,7 @@ fn write_patch(
     match graphics {
         GraphicsProtocol::Sixel => {
             if let Some(shown) = &image.shown {
-                let options = protocol::sixel::SixelOptions {
-                    max_colors: sixel_colors.clamp(2, 256),
-                    dither: false,
-                };
+                let options = sixel_options;
                 sixel.encode(&crop(shown, x, y, width, height), options, out);
             }
         }
@@ -1858,6 +1942,73 @@ mod tests {
             let sent = sequences(&mut terminal);
             assert_eq!(sent.len(), 1);
             assert!(sent[0].contains(";width=1;height=1;"), "{}", &sent[0][..60]);
+        }
+
+        #[test]
+        fn tall_sixel_pixels_halve_the_rows() {
+            let mut terminal = with_mode(SIXEL, 12, 6);
+            terminal.set_sixel_tall_pixels(true);
+            assert!(terminal.sixel_tall_pixels());
+            let area = Rect::new(1, 1, 6, 3);
+            let mut picture = exact(6, 3, Rgba::rgb(10, 20, 30));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            // 60 × 30 pixels sent, drawn 60 × 60 on the screen.
+            assert!(sent[0].contains("\"2;1;60;60"), "{}", &sent[0][..30]);
+            picture.pixel(25, 30, Rgba::rgb(250, 0, 0));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 1);
+            assert!(sent[0].contains("\"2;1;10;20"), "one cell");
+        }
+
+        #[test]
+        fn changed_images_wait_while_the_terminal_catches_up() {
+            let mut terminal = with_mode(SIXEL, 12, 6);
+            let area = Rect::new(0, 0, 6, 3);
+            let mut picture = exact(6, 3, Rgba::rgb(10, 20, 30));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            sequences(&mut terminal);
+            // As after a slow write: two frames without image updates.
+            terminal.deferred_frames = 2;
+            picture.pixel(5, 5, Rgba::rgb(250, 0, 0));
+            for _ in 0..2 {
+                terminal
+                    .draw(|f| {
+                        f.draw_image(area, &picture);
+                        f.buffer_mut().set_string(0, 5, "text", Style::new());
+                    })
+                    .unwrap();
+                assert_eq!(sequences(&mut terminal), Vec::<String>::new());
+                // Text is still drawn at once.
+                assert_eq!(&terminal.backend().screen_row(5)[..4], "text");
+            }
+            // Then the change is sent.
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            assert_eq!(sequences(&mut terminal).len(), 1);
+        }
+
+        #[test]
+        fn detection_of_tall_pixels_and_pacing() {
+            let env = |pairs: &'static [(&'static str, &'static str)]| {
+                move |name: &str| {
+                    pairs
+                        .iter()
+                        .find(|(k, _)| *k == name)
+                        .map(|(_, v)| (*v).to_owned())
+                }
+            };
+            assert!(sixel_tall_pixels(env(&[("WT_SESSION", "x")])));
+            assert!(!sixel_tall_pixels(env(&[])));
+            assert!(!sixel_tall_pixels(env(&[
+                ("WT_SESSION", "x"),
+                ("VNCE_SIXEL_ASPECT", "1")
+            ])));
+            assert!(sixel_tall_pixels(env(&[("VNCE_SIXEL_ASPECT", "2")])));
+            assert_eq!(frames_to_defer(Duration::from_millis(10)), 0);
+            assert_eq!(frames_to_defer(Duration::from_millis(30)), 1);
+            assert_eq!(frames_to_defer(Duration::from_millis(40)), 2);
+            assert_eq!(frames_to_defer(Duration::from_secs(1)), 3);
         }
 
         #[test]

@@ -234,6 +234,7 @@ fn sixel_output_is_well_formed() {
         let options = sixel::SixelOptions {
             max_colors: 1 + rng.below(256) as u16,
             dither: rng.below(2) == 0,
+            pixel_aspect: 1 + (rng.below(2) as u8),
         };
         let mut out = Vec::new();
         sixel::encode(&canvas, options, &mut out);
