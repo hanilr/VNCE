@@ -1010,6 +1010,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vnce-ui"
+version = "0.1.0"
+dependencies = [
+ "unicode-segmentation",
+ "unicode-width",
+ "vnce-core",
+]
+
+[[package]]
 name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

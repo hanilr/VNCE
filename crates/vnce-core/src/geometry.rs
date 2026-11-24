@@ -187,6 +187,29 @@ impl Rect {
         }
         Self::new(self.x + horizontal, self.y + vertical, width, height)
     }
+
+    /// A rectangle of `width` × `height` centered inside `self` (for popups), shrunk to
+    /// fit when it is larger. When the free space is odd, the extra column or row is on the
+    /// right or bottom.
+    #[must_use]
+    pub const fn centered(self, width: u16, height: u16) -> Self {
+        let width = if width > self.width {
+            self.width
+        } else {
+            width
+        };
+        let height = if height > self.height {
+            self.height
+        } else {
+            height
+        };
+        Self::new(
+            self.x + (self.width - width) / 2,
+            self.y + (self.height - height) / 2,
+            width,
+            height,
+        )
+    }
 }
 
 impl From<Size> for Rect {
@@ -233,6 +256,16 @@ mod tests {
         let rect = Rect::new(1, 1, 10, 6);
         assert_eq!(rect.inner(1, 1), Rect::new(2, 2, 8, 4));
         assert!(rect.inner(5, 0).is_empty());
+    }
+
+    #[test]
+    fn rect_centered() {
+        let rect = Rect::new(2, 1, 10, 7);
+        assert_eq!(rect.centered(4, 3), Rect::new(5, 3, 4, 3));
+        // Odd free space: the extra column / row goes to the right / bottom.
+        assert_eq!(rect.centered(5, 2), Rect::new(4, 3, 5, 2));
+        // Too large: shrunk to the rectangle.
+        assert_eq!(rect.centered(50, 50), rect);
     }
 
     #[test]
