@@ -61,6 +61,10 @@ name = "platformer"
 required-features = ["game", "ui"]
 
 [[example]]
+name = "lantern"
+required-features = ["game", "ui"]
+
+[[example]]
 name = "sfx"
 required-features = ["audio", "ui"]
 
