@@ -190,15 +190,15 @@ fn sequences(data: &[u8]) -> impl Iterator<Item = Sequence<'_>> {
             let start = rest.iter().position(|&b| b == 0x1b)?;
             rest = &rest[start..];
             let (sequence, length) = match rest.get(1) {
-                Some(b'[') => parse_csi(&rest[2..]).map(|(s, len)| (Some(s), len + 2)),
+                Some(b'[') => parse_csi(&rest[2..]).map(|(s, len)| (s, len + 2)),
                 Some(&kind @ (b'P' | b'_' | b']')) => {
                     parse_string(&rest[2..]).map(|(body, len)| {
-                        let sequence = match kind {
+                        let sequence = body.and_then(|body| match kind {
                             b'P' => Some(Sequence::Dcs(body)),
                             b'_' => Some(Sequence::Apc(body)),
                             // OSC answers are not used.
                             _ => None,
-                        };
+                        });
                         (sequence, len + 2)
                     })
                 }
@@ -215,8 +215,17 @@ fn sequences(data: &[u8]) -> impl Iterator<Item = Sequence<'_>> {
 }
 
 /// Parses the part of a CSI sequence after `ESC [`. Returns the sequence and its length.
-fn parse_csi(data: &[u8]) -> Option<(Sequence<'_>, usize)> {
-    let end = data.iter().position(|b| (0x40..=0x7e).contains(b))?;
+///
+/// An `ESC` before the final byte cancels the sequence (as in xterm): the result is then
+/// `None` with the length up to that `ESC`, where the next sequence starts. Returns `None`
+/// when the sequence is incomplete.
+fn parse_csi(data: &[u8]) -> Option<(Option<Sequence<'_>>, usize)> {
+    let end = data
+        .iter()
+        .position(|&b| (0x40..=0x7e).contains(&b) || b == 0x1b)?;
+    if data[end] == 0x1b {
+        return Some((None, end));
+    }
     let body = &data[..end];
     let (private, body) = match body.first() {
         Some(&p @ (b'?' | b'>' | b'<' | b'=')) => (Some(p), &body[1..]),
@@ -236,29 +245,49 @@ fn parse_csi(data: &[u8]) -> Option<(Sequence<'_>, usize)> {
         params,
         final_byte: data[end],
     };
-    Some((sequence, end + 1))
+    Some((Some(sequence), end + 1))
 }
 
 /// Parses a string sequence body terminated by ST (`ESC \`) or BEL. Returns the body and
 /// the total length including the terminator.
-fn parse_string(data: &[u8]) -> Option<(&[u8], usize)> {
-    for (index, window) in data.windows(2).enumerate() {
-        if window == b"\x1b\\" {
-            return Some((&data[..index], index + 2));
-        }
-        if window[0] == 0x07 {
-            return Some((&data[..index], index + 1));
+///
+/// Any other `ESC` cancels the string (as in xterm): the body is then `None` and the
+/// length stops before that `ESC`, where the next sequence starts. Returns `None` when the
+/// string is incomplete.
+fn parse_string(data: &[u8]) -> Option<(Option<&[u8]>, usize)> {
+    for (index, &byte) in data.iter().enumerate() {
+        match byte {
+            0x07 => return Some((Some(&data[..index]), index + 1)),
+            0x1b => {
+                return match data.get(index + 1) {
+                    Some(b'\\') => Some((Some(&data[..index]), index + 2)),
+                    Some(_) => Some((None, index)),
+                    None => None,
+                };
+            }
+            _ => {}
         }
     }
-    match data.last() {
-        Some(0x07) => Some((&data[..data.len() - 1], data.len())),
-        _ => None,
-    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_esc_inside_a_sequence_cancels_it() {
+        // An unterminated APC and a broken CSI must not hide the answers after them.
+        let answer = b"\x1b_Gi=31;\x1b[6;20;10t\x1b[12\x1b[?62;4c";
+        let info = TerminalInfo::parse(answer);
+        assert!(info.responded);
+        assert!(info.sixel);
+        assert_eq!(info.cell_pixels, Some((10, 20)));
+        assert!(!info.kitty_graphics);
+        // ST still ends a string, and an incomplete string at the end is ignored.
+        let info = TerminalInfo::parse(b"\x1b_Gi=31;OK\x1b\\\x1b[?62c\x1b_Gi=31;");
+        assert!(info.kitty_graphics && info.responded);
+    }
 
     #[test]
     fn kitty_answers() {
