@@ -7,6 +7,8 @@
 //!   lines, rectangles, circles, triangles with gradients, sprite blitting).
 //! - [`PixelMode`]s: converting a canvas into terminal cells (half blocks, quadrants,
 //!   sextants, octants, Braille or ASCII) with [`Canvas::render`].
+//! - PNG loading with `Canvas::from_png` / `Canvas::load_png` (feature `png`, enabled by
+//!   default).
 //!
 //! All drawing functions take signed coordinates; anything outside the canvas or the clip
 //! rectangle is ignored, so shapes can safely be partly or completely off-screen.
@@ -16,8 +18,12 @@
 pub mod canvas;
 pub mod color;
 mod draw;
+#[cfg(feature = "png")]
+pub mod image;
 pub mod mode;
 
 pub use canvas::{BlitOptions, Canvas, PixelRect};
 pub use color::{BlendMode, Rgba};
+#[cfg(feature = "png")]
+pub use image::ImageError;
 pub use mode::{ParsePixelModeError, PixelMode, Quality, RenderOptions};

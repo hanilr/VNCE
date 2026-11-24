@@ -16,7 +16,13 @@ name = "vnce_raster"
 [lints]
 workspace = true
 
+[features]
+default = ["png"]
+# PNG image loading (pure Rust).
+png = ["dep:png"]
+
 [dependencies]
+png = { workspace = true, optional = true }
 vnce-core.workspace = true
 
 [dev-dependencies]

@@ -49,3 +49,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aspect ratios, transparency-aware rendering and `PixelMode::detect` (compatible
   everywhere; `VNCE_PIXEL_MODE` override). Block tables are generated from the Unicode
   character database by `tools/gen-block-tables`.
+- PNG loading: `Canvas::from_png` and `Canvas::load_png` (feature `png`, enabled by
+  default) for every PNG color type and bit depth.
