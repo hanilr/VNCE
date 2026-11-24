@@ -44,3 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Multiply` blending; `Canvas` with clipping, Bresenham and anti-aliased (Wu) lines,
   rectangles, circles, triangles with top-left fill rule and per-vertex gradients, sprite
   blitting (regions, flips, color key, opacity) and text-art sprites.
+- Pixel modes (`vnce_raster::PixelMode`): `HalfBlock`, `Quadrant`, `Sextant`, `Octant`,
+  `Braille` and `Ascii`, with best two-color reduction per cell, ordered dithering, pixel
+  aspect ratios, transparency-aware rendering and `PixelMode::detect` (compatible
+  everywhere; `VNCE_PIXEL_MODE` override). Block tables are generated from the Unicode
+  character database by `tools/gen-block-tables`.

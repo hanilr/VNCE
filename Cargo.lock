@@ -226,6 +226,7 @@ dependencies = [
 name = "vnce-raster"
 version = "0.1.0"
 dependencies = [
+ "unicode-width",
  "vnce-core",
 ]
 
