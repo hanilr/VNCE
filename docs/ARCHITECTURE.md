@@ -29,6 +29,7 @@ The engine is **cross-platform** and targets:
 | `vnce-gpu`     | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.       | Phase 5    |
 | `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.          | Phase 6    |
 | `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers. | Phase 8    |
+| `vnce-audio`   | `vnce_audio`   | Mixer, WAV / OGG decoding, sound synthesis, playback with `cpal`.    | Phase 9    |
 | `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.     | Phase 1    |
 
 Package names use the `vnce-` prefix (`vnce` is short for Variation CLI Engine); every crate
@@ -151,6 +152,24 @@ ECS):
 - `SceneStack` runs `Scene`s as a `Game`: push / pop / switch / quit transitions, overlays
   drawn over the scenes below, data shared by all scenes. `Timer` and easing curves.
 
+### Audio
+
+`vnce_audio` (feature `audio` of `vnce`, off by default because Linux builds need the ALSA
+development files):
+
+- `Mixer`: up to 32 voices with volume, pan, speed (linear interpolation, which also
+  converts sample rates), looping, fades, music / effects groups, master volume, mute and
+  a soft limiter. It needs no device, so it is tested offline and can render to WAV.
+- `Audio` (feature `output`): `cpal` on the default device, any sample format, a small
+  buffer where allowed. The game thread sends requests through a channel; the audio
+  thread mixes without blocking or allocating and publishes which voices play. No device
+  means an error, never a panic.
+- `Sound`: own WAV decoder (8 / 16 / 24 / 32-bit integer, float, extensible) and encoder;
+  OGG Vorbis with `lewton` (feature `ogg`).
+- `Synth`: retro sound effects in code (square, saw, triangle, sine, noise; ADSR, slides,
+  pitch jump, vibrato, low-pass) with seeded presets; `Melody` renders tunes from note
+  names for seamless music loops.
+
 ### Runtime
 
 A game loop with a fixed timestep, frame pacing and input dispatch:
@@ -206,5 +225,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-7-ci-and-release.md`](plans/2026-11-24-phase-7-ci-and-release.md).
 8. **Phase 8:** Game core (`vnce-game`) — see
    [`plans/2026-11-24-phase-8-game-core.md`](plans/2026-11-24-phase-8-game-core.md).
+9. **Phase 9:** Audio (`vnce-audio`) — see
+   [`plans/2026-11-24-phase-9-audio.md`](plans/2026-11-24-phase-9-audio.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

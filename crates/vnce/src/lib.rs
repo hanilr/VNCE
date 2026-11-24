@@ -33,3 +33,8 @@ pub use vnce_ui;
 /// camera, scenes and timers. Enabled by default (feature `game`).
 #[cfg(feature = "game")]
 pub use vnce_game;
+
+/// Sound: a mixer, WAV (and OGG with the `ogg` feature) decoding, sound effects and tunes
+/// generated in code, and playback on the default device. Requires the `audio` feature.
+#[cfg(feature = "audio")]
+pub use vnce_audio;

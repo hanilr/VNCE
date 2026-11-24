@@ -27,6 +27,7 @@ vnce-raster = { workspace = true, features = ["png"] }
 vnce-gpu = { workspace = true, optional = true }
 vnce-ui = { workspace = true, optional = true }
 vnce-game = { workspace = true, optional = true }
+vnce-audio = { workspace = true, optional = true }
 
 [features]
 default = ["ui", "game"]
@@ -35,6 +36,11 @@ ui = ["dep:vnce-ui"]
 # Game building blocks (`vnce::vnce_game`): key bindings, collision, sprites, tile maps,
 # camera, scenes. Light, on by default.
 game = ["dep:vnce-game"]
+# Sound (`vnce::vnce_audio`): mixer, WAV, synthesis and playback with cpal. Off by default:
+# on Linux it needs the ALSA development files (`libasound2-dev` / `alsa-lib-devel`).
+audio = ["dep:vnce-audio"]
+# OGG Vorbis decoding for `vnce_audio`.
+ogg = ["audio", "vnce-audio/ogg"]
 # GPU rendering with wgpu (`vnce::vnce_gpu`). Off by default: wgpu is a large dependency.
 gpu = ["dep:vnce-gpu"]
 
@@ -53,6 +59,10 @@ required-features = ["ui"]
 [[example]]
 name = "platformer"
 required-features = ["game", "ui"]
+
+[[example]]
+name = "sfx"
+required-features = ["audio", "ui"]
 
 # docs.rs documents every optional feature.
 [package.metadata.docs.rs]

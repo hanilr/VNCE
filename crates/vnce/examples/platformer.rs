@@ -6,6 +6,7 @@
 //!
 //! ```sh
 //! cargo run --release --example platformer
+//! cargo run --release --example platformer --features audio   # with sound and music
 //! ```
 //!
 //! `←` `→` / `A` `D`: run · `Space` / `↑` / `W`: jump · `P` / `Esc`: pause ·
@@ -77,6 +78,157 @@ struct Shared {
     /// Display methods to cycle with `G`.
     modes: Vec<GraphicsMode>,
     best: Option<Duration>,
+    sounds: Sounds,
+}
+
+/// Sound effects of the game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sfx {
+    Jump,
+    Coin,
+    Goal,
+    Blip,
+}
+
+/// Sound effects and music, generated in code (with `--features audio`).
+#[cfg(feature = "audio")]
+struct Sounds {
+    /// `None` without an audio device: the game stays silent.
+    audio: Option<vnce::vnce_audio::Audio>,
+    jump: vnce::vnce_audio::Sound,
+    /// A few variations, so collecting many coins does not sound monotonous.
+    coins: Vec<vnce::vnce_audio::Sound>,
+    goal: vnce::vnce_audio::Sound,
+    blip: vnce::vnce_audio::Sound,
+    music: vnce::vnce_audio::Sound,
+    music_voice: std::cell::RefCell<Option<vnce::vnce_audio::Voice>>,
+    next_coin: std::cell::Cell<usize>,
+}
+
+#[cfg(feature = "audio")]
+impl Sounds {
+    const MUSIC_VOLUME: f32 = 0.35;
+
+    fn new() -> Self {
+        use vnce::vnce_audio::{Audio, Melody, Preset, Sound, Synth, Wave};
+
+        let audio = Audio::new().ok();
+        let rate = audio.as_ref().map_or(44_100, Audio::sample_rate);
+        let effect = |preset, seed| Synth::preset(preset, seed).render(rate);
+        let lead = Synth {
+            wave: Wave::Triangle,
+            attack: 0.01,
+            decay: 0.05,
+            sustain: 0.7,
+            release: 0.06,
+            volume: 0.5,
+            ..Synth::default()
+        };
+        let bass = Synth {
+            wave: Wave::Square,
+            duty: 0.25,
+            low_pass: 1200.0,
+            volume: 0.3,
+            ..lead
+        };
+        let tune = |voice, notes| {
+            Melody::new(132.0, voice)
+                .render(notes, rate)
+                .unwrap_or_else(|_| Sound::mono(rate, Vec::new()))
+        };
+        // An original 16-beat loop: a melody over a bass line.
+        let melody = tune(lead, "E4 G4 A4 G4 E4 D4 C4:2 E4 G4 A4 C5 B4 G4 A4:2");
+        let bass_line = tune(bass, "A2:2 A2:2 F2:2 F2:2 C3:2 C3:2 G2:2 G2:2");
+        let mixed = melody
+            .samples()
+            .iter()
+            .zip(bass_line.samples())
+            .map(|(m, b)| m * 0.7 + b * 0.5)
+            .collect();
+        let jingle = Synth { duty: 0.3, ..lead };
+        Self {
+            audio,
+            jump: effect(Preset::Jump, 0),
+            coins: (0..4).map(|seed| effect(Preset::Coin, seed)).collect(),
+            goal: Melody::new(200.0, jingle)
+                .render("C5 E5 G5 C6:3", rate)
+                .unwrap_or_else(|_| Sound::mono(rate, Vec::new())),
+            blip: effect(Preset::Blip, 0),
+            music: Sound::mono(rate, mixed),
+            music_voice: std::cell::RefCell::new(None),
+            next_coin: std::cell::Cell::new(0),
+        }
+    }
+
+    fn play(&self, sfx: Sfx) {
+        let Some(audio) = &self.audio else {
+            return;
+        };
+        let sound = match sfx {
+            Sfx::Jump => &self.jump,
+            Sfx::Coin => {
+                let index = self.next_coin.get();
+                self.next_coin.set((index + 1) % self.coins.len());
+                &self.coins[index]
+            }
+            Sfx::Goal => &self.goal,
+            Sfx::Blip => &self.blip,
+        };
+        audio.play(sound);
+    }
+
+    /// Starts (fading in) or stops (fading out) the music.
+    fn music(&self, on: bool) {
+        use vnce::vnce_audio::PlayOptions;
+
+        let Some(audio) = &self.audio else {
+            return;
+        };
+        let mut voice = self.music_voice.borrow_mut();
+        if on && voice.is_none() {
+            *voice = Some(audio.play_with(
+                &self.music,
+                PlayOptions {
+                    volume: Self::MUSIC_VOLUME,
+                    fade_in: Duration::from_millis(600),
+                    ..PlayOptions::music()
+                },
+            ));
+        } else if !on {
+            if let Some(voice) = voice.take() {
+                voice.stop(Duration::from_millis(400));
+            }
+        }
+    }
+
+    /// Makes the music quieter (while paused) or normal again.
+    fn duck(&self, ducked: bool) {
+        if let Some(voice) = self.music_voice.borrow().as_ref() {
+            let volume = if ducked { 0.1 } else { Self::MUSIC_VOLUME };
+            voice.set_volume(volume, Duration::from_millis(200));
+        }
+    }
+}
+
+/// Without the `audio` feature the game is silent.
+#[cfg(not(feature = "audio"))]
+struct Sounds;
+
+#[cfg(not(feature = "audio"))]
+#[allow(
+    clippy::unused_self,
+    reason = "same methods as the audio version, which uses `self`"
+)]
+impl Sounds {
+    fn new() -> Self {
+        Self
+    }
+
+    fn play(&self, _sfx: Sfx) {}
+
+    fn music(&self, _on: bool) {}
+
+    fn duck(&self, _ducked: bool) {}
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,6 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         controls,
         modes: Vec::new(),
         best: None,
+        sounds: Sounds::new(),
     };
     let mut game = SceneStack::new(Title { time: 0.0 }, shared);
     vnce_runtime::run(&mut game, RunConfig::default())?;
@@ -338,6 +491,7 @@ struct Title {
 
 impl Scene<Shared> for Title {
     fn start(&mut self, shared: &mut Shared, ctx: &mut Context) {
+        shared.sounds.music(false);
         if shared.modes.is_empty() {
             shared.modes = GraphicsMode::available(ctx.terminal_info(), &ctx.capabilities());
             // Start with cells: animating a full-screen Sixel image is slow.
@@ -374,6 +528,7 @@ impl Scene<Shared> for Title {
             return Transition::Quit;
         }
         if shared.controls.was_pressed(Action::Confirm, ctx.input()) {
+            shared.sounds.play(Sfx::Blip);
             return Transition::switch(Play::new());
         }
         Transition::None
@@ -522,6 +677,7 @@ impl Play {
         let can_jump = player.on_ground || !player.coyote.is_finished();
         if can_jump && !player.buffered_jump.is_finished() {
             player.velocity.1 = -JUMP_SPEED;
+            shared.sounds.play(Sfx::Jump);
             player.on_ground = false;
             player.coyote = Timer::once(Duration::ZERO);
             player.buffered_jump = Timer::once(Duration::ZERO);
@@ -564,9 +720,19 @@ impl Play {
 }
 
 impl Scene<Shared> for Play {
+    fn start(&mut self, shared: &mut Shared, _ctx: &mut Context) {
+        shared.sounds.music(true);
+    }
+
+    fn resume(&mut self, shared: &mut Shared, _ctx: &mut Context) {
+        shared.sounds.duck(false);
+    }
+
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
         let input = ctx.input();
         if shared.controls.was_pressed(Action::Pause, input) {
+            shared.sounds.play(Sfx::Blip);
+            shared.sounds.duck(true);
             return Transition::push(Pause);
         }
         if shared.controls.was_pressed(Action::Method, input) {
@@ -581,6 +747,7 @@ impl Scene<Shared> for Play {
         self.coins.retain(|coin| !coin.intersects(&body));
         if self.coins.len() < before {
             self.camera.shake(1.5, Duration::from_millis(150));
+            shared.sounds.play(Sfx::Coin);
         }
         self.camera.update(ctx.dt(), Some(body.center()));
 
@@ -589,6 +756,8 @@ impl Scene<Shared> for Play {
             if shared.best.is_none_or(|best| self.time < best) {
                 shared.best = Some(self.time);
             }
+            shared.sounds.music(false);
+            shared.sounds.play(Sfx::Goal);
             return Transition::switch(Finish {
                 time: self.time,
                 collected,
@@ -665,6 +834,7 @@ impl Scene<Shared> for Pause {
         if shared.controls.was_pressed(Action::Pause, input)
             || shared.controls.was_pressed(Action::Confirm, input)
         {
+            shared.sounds.play(Sfx::Blip);
             return Transition::Pop;
         }
         Transition::None

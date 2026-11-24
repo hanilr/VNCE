@@ -5,9 +5,9 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 8: core types, terminal layer, game loop, pixel
-> graphics, terminal graphics protocols, GPU rendering, widgets and game building blocks).
-> The API is not stable yet.
+> **Status:** early development (Phase 9: core types, terminal layer, game loop, pixel
+> graphics, terminal graphics protocols, GPU rendering, widgets, game building blocks and
+> audio). The API is not stable yet.
 
 ## Usage
 
@@ -58,6 +58,13 @@ collision (`Aabb`, `move_and_collide` through solid tiles, `SpatialGrid`), sprit
 and animation, tile maps loaded from text, a following `Camera`, scenes (`SceneStack`:
 title, play, pause …) and timers.
 
+For sound, enable the `audio` feature: `vnce_audio` mixes sounds (volume, pan, speed,
+looping, fades, music and effects groups), decodes WAV (and OGG Vorbis with the `ogg`
+feature), generates retro sound effects and tunes in code (`Synth`, `Preset`, `Melody`)
+and plays them on the default device with `cpal`. Without a device, games stay silent
+instead of failing. On Linux the `audio` feature needs the ALSA development files
+(`libasound2-dev` on Debian / Ubuntu, `alsa-lib-devel` on Fedora).
+
 Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
@@ -65,6 +72,8 @@ cargo run --example hello             # styles, colors, Unicode, input events
 cargo run --example stars             # a small game: arrows/WASD, +/- to change the FPS
 cargo run --example ui                # widgets: menu, gauges, chart, popup, FPS overlay
 cargo run --release --example platformer   # a small platformer: arrows/WASD, Space, P
+cargo run --release --example platformer --features audio   # … with sound and music
+cargo run --release --example sfx --features audio          # sound effect workshop
 cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
 cargo run --release --example raster -- image.png   # show a PNG image
 cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method
@@ -119,6 +128,7 @@ Releases are described in [`docs/RELEASING.md`](docs/RELEASING.md).
 | `crates/vnce-gpu/`        | GPU rendering with `wgpu` (`vnce_gpu`).       |
 | `crates/vnce-ui/`         | Widgets (`vnce_ui`).                          |
 | `crates/vnce-game/`       | Game building blocks (`vnce_game`).           |
+| `crates/vnce-audio/`      | Sound (`vnce_audio`).                         |
 | `tools/gen-block-tables/` | Generates block-character tables.             |
 | `docs/ARCHITECTURE.md`    | High-level design.                            |
 | `docs/plans/`             | Approved implementation plans.                |

@@ -65,3 +65,23 @@ loops.
 
 - Real output can only be tried on Windows here; Linux and macOS are build-checked.
 - Small device buffers keep latency low where the device allows it.
+
+## Implementation notes
+
+- Sounds are not resampled when loaded (the device rate is not known then): the mixer
+  steps through each sound at `speed × sound rate / output rate` with linear
+  interpolation, which converts any rate on the fly.
+- `Mixer` is public and needs no device; `Audio` wraps one on the audio thread. Ids are
+  assigned on the game side so `play` returns at once; the audio thread publishes the
+  playing ids in atomics after every buffer for `Voice::is_playing`.
+- Soft limiter: unchanged up to 0.8, then a `tanh` knee towards 1.0.
+- The tests found an overflow in `Sound::frame` for the end-of-sound index of stereo
+  sounds; fixed before the first commit.
+- Verified on Windows with a real device (silence only, so the tests make no noise); the
+  OGG decoder was checked on a real file found on this machine, which is not committed
+  (it belongs to another game). Linux builds of `cpal` need the ALSA development files,
+  so the Linux cross-check here covers `vnce-audio` without the `output` feature; CI
+  installs `libasound2-dev` and builds everything on Linux.
+- The platformer keeps working without the feature (a silent `Sounds` stand-in); with it,
+  the music fades in when playing starts, ducks under the pause menu and fades out at the
+  goal.

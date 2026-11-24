@@ -105,6 +105,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared data); `Timer` and easing curves.
 - `platformer` example: an original platformer with a text level, an animated player,
   coins, a goal, a following camera and title, play, pause and finish scenes.
+- `vnce-audio` (`vnce_audio`, feature `audio` of `vnce`, off by default): `Mixer` (32 voices,
+  volume, pan, speed, looping, fades, groups, master volume, mute, soft limiter), `Audio`
+  playback with `cpal` on any sample format, `Sound` with an own WAV decoder and encoder,
+  OGG Vorbis with `lewton` (feature `ogg`), `Synth` sound effects with seeded `Preset`s,
+  `note` and `Melody` for tunes.
+- `platformer` plays generated sound effects and music with `--features audio`; `sfx`
+  example: pick, tweak, hear, see and save sound effects.
 
 ### Changed
 
