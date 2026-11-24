@@ -7,14 +7,17 @@
 //!   in-memory [`TestBackend`].
 //! - [`terminal`]: the double-buffered [`Terminal`] that only redraws changed cells.
 //! - [`capabilities`]: what the terminal supports ([`Capabilities`]).
+//! - [`input`]: keyboard, mouse, resize, focus and paste [`Event`]s.
 //!
 //! This crate is part of the **Variation** ecosystem.
 
 pub mod ansi;
 pub mod backend;
 pub mod capabilities;
+pub mod input;
 pub mod terminal;
 
 pub use backend::{Backend, CrosstermBackend, TestBackend};
 pub use capabilities::Capabilities;
+pub use input::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 pub use terminal::{Frame, Terminal, TerminalOptions};

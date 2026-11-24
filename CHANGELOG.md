@@ -18,3 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   double-buffered `Terminal` that writes only changed cells in a single write with
   synchronized output, `CrosstermBackend` (raw mode, alternate screen, restore on drop and
   on panic) and an in-memory `TestBackend` that emulates the screen.
+- `vnce_term::input`: engine-owned `Event`, `KeyEvent`, `KeyCode`, `KeyModifiers` and
+  `MouseEvent` types with `poll(timeout)` and `read()`.
+- `Capabilities::detect()`: color depth from `VNCE_COLOR_DEPTH`, `NO_COLOR`, `COLORTERM`,
+  `TERM`, `TERM_PROGRAM` and Windows Terminal; synchronized output disabled where
+  unsupported.
+- `hello` example: styled and Unicode text, truecolor gradient, animation, resize and
+  input events.

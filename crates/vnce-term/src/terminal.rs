@@ -118,12 +118,14 @@ impl Terminal<CrosstermBackend> {
 
     /// Takes over the real terminal with the given options.
     ///
+    /// Capabilities are detected with [`Capabilities::detect`].
+    ///
     /// # Errors
     ///
     /// Returns an error if the terminal cannot be configured (for example when stdout is
     /// not a terminal).
     pub fn enter_with(options: TerminalOptions) -> io::Result<Self> {
-        let mut terminal = Self::new(CrosstermBackend::new(), Capabilities::default())?;
+        let mut terminal = Self::new(CrosstermBackend::new(), Capabilities::detect())?;
         terminal.enter_mode(options)?;
         Ok(terminal)
     }

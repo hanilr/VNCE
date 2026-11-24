@@ -65,3 +65,12 @@ correctness; escape output via `TestBackend`.
 - The classic Windows console does not support synchronized output; it stays disabled
   there, drawing still works.
 - Package names use the `vnce-` prefix (`vn-core` is already taken on crates.io).
+
+## Implementation notes
+
+- Mouse capture, bracketed paste and focus events are enabled through `crossterm`
+  rather than `vnce_term::ansi`, because on Windows they are console-mode settings and not
+  escape sequences. All drawing output is still produced by `vnce_term::ansi`.
+- `VNCE_COLOR_DEPTH` (`truecolor`, `256`, `16`, `none`) was added as a user override for
+  color depth detection.
+- Media keys and modifier-only key events are not reported yet.
