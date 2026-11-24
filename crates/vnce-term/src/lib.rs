@@ -21,6 +21,7 @@ pub mod input;
 pub mod query;
 mod sys;
 pub mod terminal;
+pub mod tmux;
 
 pub use backend::{Backend, CrosstermBackend, TestBackend};
 pub use capabilities::Capabilities;

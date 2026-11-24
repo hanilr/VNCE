@@ -2,7 +2,7 @@
 
 use std::io;
 
-use vnce_core::{Buffer, Rect, Size};
+use vnce_core::{Buffer, Color, Rect, Size, Style};
 use vnce_raster::{Canvas, PixelMode, RenderOptions, protocol};
 
 use crate::ansi::{self, StyleState};
@@ -307,6 +307,9 @@ pub struct Terminal<B: Backend> {
     /// How images are shown.
     graphics: GraphicsMode,
     images: ImageState,
+    /// Inside tmux: Kitty commands are wrapped for passthrough and images are shown with
+    /// Unicode placeholders.
+    tmux_passthrough: bool,
 }
 
 /// Bookkeeping for images shown with a graphics protocol.
@@ -321,6 +324,8 @@ struct ImageState {
     next_id: u32,
     /// Ids freed when tiled images were rebuilt, used again first.
     free_ids: Vec<u32>,
+    /// Kitty images are shown with Unicode placeholders (inside tmux).
+    placeholders: bool,
     /// Keeps the Sixel palette from frame to frame (faster, no color flicker).
     sixel: protocol::sixel::Encoder,
 }
@@ -370,12 +375,14 @@ impl<B: Backend> Terminal<B> {
             output: Vec::new(),
             frame_count: 0,
             graphics: GraphicsMode::Cells(PixelMode::detect(capabilities.color_depth)),
+            tmux_passthrough: false,
             images: ImageState {
                 requests: Vec::new(),
                 placed: Vec::new(),
                 kitty_shown: false,
                 next_id: 1,
                 free_ids: Vec::new(),
+                placeholders: false,
                 sixel: protocol::sixel::Encoder::new(),
             },
         })
@@ -395,6 +402,7 @@ impl<B: Backend> Terminal<B> {
         }
         self.info = self.backend.terminal_info();
         self.graphics = GraphicsMode::detect(&self.info, &self.capabilities);
+        self.tmux_passthrough = crate::tmux::inside();
         Ok(())
     }
 
@@ -410,6 +418,22 @@ impl<B: Backend> Terminal<B> {
     pub fn set_graphics_mode(&mut self, mode: GraphicsMode) {
         if mode != self.graphics {
             self.graphics = mode;
+            self.full_redraw = true;
+        }
+    }
+
+    /// Whether Kitty commands are wrapped for tmux passthrough and Kitty images are shown
+    /// with Unicode placeholders. Set when entering inside tmux.
+    #[must_use]
+    pub fn tmux_passthrough(&self) -> bool {
+        self.tmux_passthrough
+    }
+
+    /// Turns tmux passthrough on or off (see [`Terminal::tmux_passthrough`]). The next
+    /// frame is fully redrawn.
+    pub fn set_tmux_passthrough(&mut self, on: bool) {
+        if on != self.tmux_passthrough {
+            self.tmux_passthrough = on;
             self.full_redraw = true;
         }
     }
@@ -453,6 +477,9 @@ impl<B: Backend> Terminal<B> {
                 // Kitty images are not removed by leaving the screen; free them.
                 let mut out = Vec::new();
                 protocol::kitty::delete_all(&mut out);
+                if self.tmux_passthrough {
+                    out = crate::tmux::wrap_kitty(&out);
+                }
                 self.backend.write_all(&out)?;
                 self.backend.flush()?;
                 self.images.kitty_shown = false;
@@ -586,6 +613,7 @@ impl<B: Backend> Terminal<B> {
             }
         }
 
+        self.images.placeholders = self.tmux_passthrough;
         let sends = self.images.plan(
             self.graphics,
             self.full_redraw,
@@ -629,6 +657,10 @@ impl<B: Backend> Terminal<B> {
         ansi::reset_style(out)?;
         if capabilities.synchronized_output {
             ansi::end_synchronized_update(out)?;
+        }
+        // Also after switching away from Kitty, when its images are deleted.
+        if self.tmux_passthrough {
+            *out = crate::tmux::wrap_kitty(out);
         }
         self.backend.write_all(out)?;
         self.backend.flush()?;
@@ -779,6 +811,13 @@ impl ImageState {
                 }
             }
         }
+        if kitty && self.placeholders {
+            // The cells of placeholder images show their placeholders, on every frame (the
+            // buffer starts blank), so they only reach the terminal when they change.
+            for placed in &self.placed {
+                write_placeholders(current, placed);
+            }
+        }
         sends
     }
 
@@ -841,11 +880,19 @@ impl ImageState {
                     let image = &self.placed[index];
                     if let Some(tiles) = &image.tiles {
                         for tile in 0..tiles.ids.len() {
-                            write_tile(image, tile, out)?;
+                            write_tile(image, tile, self.placeholders, out)?;
                         }
                     } else {
                         ansi::move_to(out, image.area.x, image.area.y)?;
-                        write_image(graphics, image, cell_pixels, sixel_colors, sixel, out);
+                        write_image(
+                            graphics,
+                            image,
+                            cell_pixels,
+                            sixel_colors,
+                            sixel,
+                            self.placeholders,
+                            out,
+                        );
                     }
                 }
                 ImageSend::Patches(index, areas) => {
@@ -861,7 +908,7 @@ impl ImageState {
                         if let Some(id) = image.tiles.as_ref().map(|t| t.ids[tile]) {
                             protocol::kitty::delete(id, out);
                         }
-                        write_tile(image, tile, out)?;
+                        write_tile(image, tile, self.placeholders, out)?;
                     }
                 }
             }
@@ -1034,24 +1081,12 @@ fn write_image(
     cell_pixels: (u16, u16),
     sixel_colors: u16,
     sixel: &mut protocol::sixel::Encoder,
+    placeholders: bool,
     out: &mut Vec<u8>,
 ) {
     let area = image.area;
     match graphics {
-        GraphicsProtocol::Kitty => {
-            let placement = protocol::kitty::Placement {
-                id: image.id,
-                columns: area.width,
-                rows: area.height,
-                z_index: 0,
-            };
-            protocol::kitty::transmit_and_place_with(
-                &image.canvas,
-                placement,
-                protocol::kitty::Options::default(),
-                out,
-            );
-        }
+        GraphicsProtocol::Kitty => send_kitty(&image.canvas, image.id, area, placeholders, out),
         GraphicsProtocol::Sixel => {
             // Sixel draws pixels 1:1, so the image is scaled to the exact size of its area.
             let width = u32::from(area.width) * u32::from(cell_pixels.0);
@@ -1117,7 +1152,12 @@ fn write_patch(
 }
 
 /// Sends tile `tile` of a tiled Kitty image at its position.
-fn write_tile(image: &PlacedImage, tile: usize, out: &mut Vec<u8>) -> io::Result<()> {
+fn write_tile(
+    image: &PlacedImage,
+    tile: usize,
+    placeholders: bool,
+    out: &mut Vec<u8>,
+) -> io::Result<()> {
     let Some(tiles) = &image.tiles else {
         return Ok(());
     };
@@ -1133,19 +1173,47 @@ fn write_tile(image: &PlacedImage, tile: usize, out: &mut Vec<u8>) -> io::Result
         u32::from(area.height) * cell_height,
     );
     ansi::move_to(out, area.x, area.y)?;
-    let placement = protocol::kitty::Placement {
-        id: tiles.ids[tile],
-        columns: area.width,
-        rows: area.height,
-        z_index: 0,
-    };
-    protocol::kitty::transmit_and_place_with(
-        &part,
-        placement,
-        protocol::kitty::Options::default(),
-        out,
-    );
+    send_kitty(&part, tiles.ids[tile], area, placeholders, out);
     Ok(())
+}
+
+/// Transmits a Kitty image for `area`: placed at the cursor, or with a virtual placement
+/// shown by the placeholders in its cells.
+fn send_kitty(canvas: &Canvas, id: u32, area: Rect, placeholders: bool, out: &mut Vec<u8>) {
+    let options = protocol::kitty::Options::default();
+    if placeholders {
+        protocol::kitty::transmit_virtual(canvas, id, area.width, area.height, options, out);
+    } else {
+        let placement = protocol::kitty::Placement {
+            id,
+            columns: area.width,
+            rows: area.height,
+            z_index: 0,
+        };
+        protocol::kitty::transmit_and_place_with(canvas, placement, options, out);
+    }
+}
+
+/// Writes the Unicode placeholders of a Kitty image (or of each of its tiles) into its
+/// cells: the image id is the foreground color, the diacritics give row and column.
+fn write_placeholders(buffer: &mut Buffer, image: &PlacedImage) {
+    let parts: Vec<(Rect, u32)> = match &image.tiles {
+        Some(tiles) => (0..tiles.ids.len())
+            .map(|index| (tiles.area(image.area, index), tiles.ids[index]))
+            .collect(),
+        None => vec![(image.area, image.id)],
+    };
+    for (area, id) in parts {
+        let (r, g, b) = protocol::kitty::placeholder_color(id);
+        let style = Style::new().fg(Color::Rgb(r, g, b));
+        for row in 0..area.height {
+            for column in 0..area.width {
+                if let Some(text) = protocol::kitty::placeholder(id, column, row) {
+                    buffer.set_symbol(area.x + column, area.y + row, &text, style);
+                }
+            }
+        }
+    }
 }
 
 /// The `width` × `height` pixels of `canvas` starting at `(x, y)` (clipped).
@@ -1785,6 +1853,46 @@ mod tests {
             let sent = sequences(&mut terminal);
             assert_eq!(sent.len(), 1);
             assert!(sent[0].contains(";width=1;height=1;"), "{}", &sent[0][..60]);
+        }
+
+        #[test]
+        fn kitty_inside_tmux_uses_passthrough_and_placeholders() {
+            let mut terminal = with_mode(KITTY, 10, 5);
+            terminal.set_tmux_passthrough(true);
+            assert!(terminal.tmux_passthrough());
+            let area = Rect::new(1, 1, 3, 2);
+            terminal
+                .draw(|f| f.draw_image(area, &image(Rgba::rgb(255, 0, 0))))
+                .unwrap();
+            let sent = sequences(&mut terminal);
+            assert_eq!(sent.len(), 1, "{sent:?}");
+            // Wrapped for tmux, with a virtual placement.
+            assert!(
+                sent[0].starts_with("\x1bPtmux;\x1b\x1b_Ga=T,U=1,f=100,i=1,c=3,r=2,q=2"),
+                "{}",
+                &sent[0][..40]
+            );
+            // The cells show the placeholders, the id in the foreground color.
+            for (x, y, column, row) in [(1, 1, 0, 0), (3, 2, 2, 1)] {
+                let cell = terminal.backend().screen().cell(x, y).unwrap().clone();
+                let expected = protocol::kitty::placeholder(1, column, row).unwrap();
+                assert_eq!(cell.symbol(), expected);
+                assert_eq!(cell.fg, Color::Rgb(0, 0, 1));
+            }
+
+            // Unchanged: nothing is sent, the placeholders stay.
+            terminal
+                .draw(|f| f.draw_image(area, &image(Rgba::rgb(255, 0, 0))))
+                .unwrap();
+            assert_eq!(sequences(&mut terminal), Vec::<String>::new());
+
+            // Removed: a wrapped delete, and the cells are blank again.
+            terminal.draw(|_| {}).unwrap();
+            assert_eq!(
+                sequences(&mut terminal),
+                ["\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=1,q=2\x1b\x1b\\\x1b\\"]
+            );
+            assert_eq!(terminal.backend().screen_row(1), "          ");
         }
 
         #[test]

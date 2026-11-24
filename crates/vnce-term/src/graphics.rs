@@ -33,7 +33,9 @@ impl GraphicsMode {
     ///
     /// 1. `VNCE_GRAPHICS` overrides everything (`kitty`, `sixel`, `iterm2`, `cells` or a
     ///    pixel mode name such as `halfblock`).
-    /// 2. Inside tmux or screen: cells (protocols need special wrapping there).
+    /// 2. GNU screen: cells. Inside tmux or zellij: Sixel when the multiplexer reports it,
+    ///    Kitty in tmux through passthrough when the terminal around it answers (with
+    ///    truecolor, which the Unicode placeholders need).
     /// 3. Kitty, then Sixel, then iTerm2, if supported.
     /// 4. Otherwise cells with [`PixelMode::detect`].
     #[must_use]
@@ -56,7 +58,7 @@ impl GraphicsMode {
                 return mode;
             }
         }
-        Self::protocols(&env, info)
+        Self::protocols(&env, info, *capabilities)
             .first()
             .map_or(cells, |&protocol| Self::Protocol(protocol))
     }
@@ -66,7 +68,7 @@ impl GraphicsMode {
     #[must_use]
     pub fn available(info: &TerminalInfo, capabilities: &Capabilities) -> Vec<Self> {
         let env = |name: &str| std::env::var(name).ok();
-        let mut modes: Vec<Self> = Self::protocols(&env, info)
+        let mut modes: Vec<Self> = Self::protocols(&env, info, *capabilities)
             .into_iter()
             .map(Self::Protocol)
             .collect();
@@ -82,13 +84,30 @@ impl GraphicsMode {
     fn protocols(
         env: &dyn Fn(&str) -> Option<String>,
         info: &TerminalInfo,
+        capabilities: Capabilities,
     ) -> Vec<GraphicsProtocol> {
         let term = env("TERM").unwrap_or_default().to_ascii_lowercase();
-        let multiplexer = env("TMUX").is_some()
-            || term.starts_with("screen")
-            || term.starts_with("tmux")
-            || info.name_contains("tmux");
-        if multiplexer {
+        let tmux = env("TMUX").is_some() || term.starts_with("tmux") || info.name_contains("tmux");
+        let zellij = env("ZELLIJ").is_some() || info.name_contains("zellij");
+        if tmux || zellij {
+            // The multiplexer answered the queries itself: its DA1 tells whether it draws
+            // Sixel. A Kitty answer can only come from the terminal around tmux
+            // (passthrough); its images are placed with Unicode placeholders, whose image ids
+            // are truecolor foreground colors.
+            let mut protocols = Vec::new();
+            if tmux
+                && info.kitty_graphics
+                && capabilities.color_depth == vnce_core::ColorDepth::TrueColor
+            {
+                protocols.push(GraphicsProtocol::Kitty);
+            }
+            if info.sixel {
+                protocols.push(GraphicsProtocol::Sixel);
+            }
+            return protocols;
+        }
+        if term.starts_with("screen") {
+            // GNU screen passes no graphics through.
             return Vec::new();
         }
         let program = env("TERM_PROGRAM").unwrap_or_default();
@@ -193,14 +212,41 @@ mod tests {
     }
 
     #[test]
-    fn multiplexers_use_cells() {
-        let info = TerminalInfo {
+    fn multiplexers() {
+        const TMUX: (&str, &str) = ("TMUX", "/tmp/tmux-1000/default,1,0");
+        let both = TerminalInfo {
             sixel: true,
             kitty_graphics: true,
             ..TerminalInfo::default()
         };
-        assert!(!detect(&[("TMUX", "/tmp/tmux-1000/default,1,0")], &info).is_protocol());
-        assert!(!detect(&[("TERM", "screen-256color")], &info).is_protocol());
+        let kitty = GraphicsMode::Protocol(GraphicsProtocol::Kitty);
+        let sixel = GraphicsMode::Protocol(GraphicsProtocol::Sixel);
+        // tmux: Kitty through passthrough first, then tmux's own Sixel.
+        assert_eq!(detect(&[TMUX], &both), kitty);
+        let sixel_only = TerminalInfo {
+            sixel: true,
+            ..TerminalInfo::default()
+        };
+        assert_eq!(detect(&[TMUX], &sixel_only), sixel);
+        // No truecolor: no placeholders, so no Kitty.
+        let env = |name: &str| (name == "TMUX").then(|| TMUX.1.to_owned());
+        let capabilities = Capabilities {
+            color_depth: ColorDepth::Indexed256,
+            ..Capabilities::default()
+        };
+        assert_eq!(GraphicsMode::from_env(env, &both, &capabilities), sixel);
+        // Nothing reported: cells, never iTerm2.
+        assert!(
+            !detect(
+                &[TMUX, ("TERM_PROGRAM", "iTerm.app")],
+                &TerminalInfo::default()
+            )
+            .is_protocol()
+        );
+        // zellij draws Sixel but has no passthrough.
+        assert_eq!(detect(&[("ZELLIJ", "0")], &both), sixel);
+        // GNU screen: cells.
+        assert!(!detect(&[("TERM", "screen-256color")], &both).is_protocol());
     }
 
     #[test]

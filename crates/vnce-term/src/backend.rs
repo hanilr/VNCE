@@ -423,14 +423,29 @@ impl TestBackend {
             {
                 // String sequences (Kitty APC, Sixel DCS, iTerm2 OSC) end with ST or BEL.
                 // They are recorded, not printed.
-                let end = [
-                    after.find("\x1b\\").map(|i| i + 2),
-                    after.find('\x07').map(|i| i + 1),
-                ]
-                .into_iter()
-                .flatten()
-                .min()
-                .unwrap_or(after.len());
+                let end = if after.starts_with("tmux;") {
+                    // tmux passthrough: every ESC inside is doubled, so the end is the
+                    // first ST whose ESC is not part of such a pair.
+                    let bytes = after.as_bytes();
+                    let mut index = 0;
+                    loop {
+                        match (bytes.get(index), bytes.get(index + 1)) {
+                            (Some(0x1b), Some(0x1b)) => index += 2,
+                            (Some(0x1b), Some(b'\\')) => break index + 2,
+                            (Some(_), _) => index += 1,
+                            (None, _) => break bytes.len(),
+                        }
+                    }
+                } else {
+                    [
+                        after.find("\x1b\\").map(|i| i + 2),
+                        after.find('\x07').map(|i| i + 1),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .min()
+                    .unwrap_or(after.len())
+                };
                 let length = rest.len() - after.len() + end;
                 self.graphics.push(rest.as_bytes()[..length].to_vec());
                 rest = &rest[length..];

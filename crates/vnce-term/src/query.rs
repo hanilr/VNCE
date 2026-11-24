@@ -70,9 +70,30 @@ impl TerminalInfo {
     /// # Errors
     ///
     /// Returns an error if writing or reading fails.
+    ///
+    /// Inside tmux, the Kitty graphics query and a second DA1 are also sent to the
+    /// terminal around tmux (passthrough), and the answers are read until both DA1 answers
+    /// arrived (or the timeout, when passthrough is off).
     pub fn query<B: Backend + ?Sized>(backend: &mut B, timeout: Duration) -> io::Result<Self> {
-        let answer = backend.query(Self::REQUEST, timeout, &has_device_attributes)?;
+        let answer = if crate::tmux::inside() {
+            let request = Self::tmux_request();
+            backend.query(&request, timeout, &|answer| {
+                device_attribute_answers(answer) >= 2
+            })?
+        } else {
+            backend.query(Self::REQUEST, timeout, &has_device_attributes)?
+        };
         Ok(Self::parse(&answer))
+    }
+
+    /// [`TerminalInfo::REQUEST`] followed by the Kitty graphics query and DA1 wrapped for
+    /// tmux passthrough.
+    #[must_use]
+    pub fn tmux_request() -> Vec<u8> {
+        let mut request = Self::REQUEST.to_vec();
+        crate::tmux::wrap(b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\", &mut request);
+        crate::tmux::wrap(b"\x1b[c", &mut request);
+        request
     }
 
     /// Parses the terminal's answers. Unknown or malformed sequences are ignored.
@@ -112,7 +133,9 @@ impl TerminalInfo {
 
     fn csi(&mut self, private: Option<u8>, params: &[u16], final_byte: u8) {
         match (private, final_byte, params) {
-            (Some(b'?'), b'c', _) => {
+            // Only the first answer counts: inside tmux, the second one comes from the
+            // terminal around it, which does not draw the Sixel images.
+            (Some(b'?'), b'c', _) if !self.responded => {
                 self.responded = true;
                 self.device_attributes = params.to_vec();
                 // The first parameter is the terminal class; attributes follow.
@@ -153,6 +176,22 @@ impl TerminalInfo {
 }
 
 /// Returns `true` once the DA1 answer (`CSI ? … c`) has arrived.
+/// Number of DA1 answers in `answer`.
+fn device_attribute_answers(answer: &[u8]) -> usize {
+    sequences(answer)
+        .filter(|sequence| {
+            matches!(
+                sequence,
+                Sequence::Csi {
+                    private: Some(b'?'),
+                    final_byte: b'c',
+                    ..
+                }
+            )
+        })
+        .count()
+}
+
 pub(crate) fn has_device_attributes(answer: &[u8]) -> bool {
     sequences(answer).any(|sequence| {
         matches!(
@@ -274,6 +313,22 @@ fn parse_string(data: &[u8]) -> Option<(Option<&[u8]>, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inside_tmux_the_outer_terminal_is_asked_too() {
+        let request = TerminalInfo::tmux_request();
+        assert!(request.starts_with(TerminalInfo::REQUEST));
+        let tail = &request[TerminalInfo::REQUEST.len()..];
+        assert!(tail.starts_with(b"\x1bPtmux;\x1b\x1b_Gi=31,"));
+        assert!(tail.ends_with(b"\x1bPtmux;\x1b\x1b[c\x1b\\"));
+        // tmux answers first (with Sixel), the terminal around it second (without).
+        let answer = b"\x1b[?62;4c\x1b_Gi=31;OK\x1b\\\x1b[?62;22c";
+        assert_eq!(device_attribute_answers(answer), 2);
+        let info = TerminalInfo::parse(answer);
+        assert!(info.sixel, "only the first DA1 counts");
+        assert!(info.kitty_graphics);
+        assert_eq!(info.device_attributes, [62, 4]);
+    }
 
     #[test]
     fn an_esc_inside_a_sequence_cancels_it() {

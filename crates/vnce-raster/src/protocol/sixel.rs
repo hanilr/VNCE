@@ -888,7 +888,7 @@ mod tests {
         for band in (0..height as usize).step_by(6) {
             bands.encode(&indices, height as usize, band, &mut single);
         }
-        assert!(parallel.ends_with(&[&single[..], b"\\"].concat()));
+        assert!(parallel.ends_with(&[&single[..], b"\x1b\\"].concat()));
     }
 
     #[test]
