@@ -42,3 +42,22 @@ and volume settings, sound and music with `--features audio`.
 - Key rebinding is not in the settings screen yet (volumes, frame rate and display method
   are); planned with the save file helper so bindings can be stored.
 - Cosmetic: the floor tile pattern repeats visibly as a grid.
+
+## Resume here (next session)
+
+State at the end of the first session: everything is committed on `main` (Lantern in
+`crates/vnce/examples/lantern.rs`, settings with volumes, frame rate and display method).
+The user tried the game: it works; half blocks run at about 110 FPS in Windows Terminal.
+
+Order agreed with the user:
+
+1. Fix the gaps listed above (engine `Rng`, bitmap font, save file helper with best score,
+   settings and key bindings; key rebinding in the Lantern settings; the floor pattern),
+   then move Lantern to them. Plan each engine addition before implementing it, as
+   AGENTS.md requires.
+2. Write the tutorial (`docs/tutorial/`, compiled as doc-tests).
+3. Docs and changelog; close the phase with implementation notes.
+
+Earlier findings that still stand: Sixel scrolling in Windows Terminal is limited by the
+terminal itself (accepted by the user, see the Phase 10 notes); a native window backend
+was discussed and declined.

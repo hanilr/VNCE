@@ -246,7 +246,9 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-7-ci-and-release.md`](plans/2026-11-24-phase-7-ci-and-release.md).
 8. **Phase 8:** Game core (`vnce-game`) — see
    [`plans/2026-11-24-phase-8-game-core.md`](plans/2026-11-24-phase-8-game-core.md).
-9. **Phase 9:** Audio (`vnce-audio`) — see
-   [`plans/2026-11-24-phase-9-audio.md`](plans/2026-11-24-phase-9-audio.md).
+. **Phase 10:** Graphics protocols in tmux, and their speed — see
+   [`plans/2026-11-24-phase-10-protocol-performance.md`](plans/2026-11-24-phase-10-protocol-performance.md).
+11. **Phase 11:** Example game and tutorial (in progress) — see
+   [`plans/2026-11-24-phase-11-example-game.md`](plans/2026-11-24-phase-11-example-game.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

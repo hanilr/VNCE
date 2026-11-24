@@ -78,6 +78,7 @@ cargo run --example ui                # widgets: menu, gauges, chart, popup, FPS
 cargo run --release --example platformer   # a small platformer: arrows/WASD, Space, P
 cargo run --release --example platformer --features audio   # … with sound and music
 cargo run --release --example sfx --features audio          # sound effect workshop
+cargo run --release --example lantern      # a cave game: arrows/WASD, P, settings menu
 cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
 cargo run --release --example raster -- image.png   # show a PNG image
 cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method
