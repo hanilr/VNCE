@@ -28,3 +28,8 @@ pub use vnce_gpu;
 /// FPS overlay. Enabled by default (feature `ui`).
 #[cfg(feature = "ui")]
 pub use vnce_ui;
+
+/// Game building blocks: key bindings, collision, sprites and animation, tile maps,
+/// camera, scenes and timers. Enabled by default (feature `game`).
+#[cfg(feature = "game")]
+pub use vnce_game;

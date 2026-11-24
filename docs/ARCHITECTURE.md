@@ -20,15 +20,16 @@ The engine is **cross-platform** and targets:
 
 ## Crates
 
-| Package        | Import name    | Responsibility                                                      | Status     |
-| -------------- | -------------- | ------------------------------------------------------------------- | ---------- |
-| `vnce-core`    | `vnce_core`    | Geometry, color, style, cell and buffer types.                      | Phase 1    |
-| `vnce-term`    | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images. | Phase 1, 4 |
-| `vnce-runtime` | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.      | Phase 2    |
-| `vnce-raster`  | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.                  | Phase 3    |
-| `vnce-gpu`     | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.      | Phase 5    |
-| `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.         | Phase 6    |
-| `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.    | Phase 1    |
+| Package        | Import name    | Responsibility                                                       | Status     |
+| -------------- | -------------- | -------------------------------------------------------------------- | ---------- |
+| `vnce-core`    | `vnce_core`    | Geometry, color, style, cell and buffer types.                       | Phase 1    |
+| `vnce-term`    | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images.  | Phase 1, 4 |
+| `vnce-runtime` | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.       | Phase 2    |
+| `vnce-raster`  | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.                   | Phase 3    |
+| `vnce-gpu`     | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.       | Phase 5    |
+| `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.          | Phase 6    |
+| `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers. | Phase 8    |
+| `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.     | Phase 1    |
 
 Package names use the `vnce-` prefix (`vnce` is short for Variation CLI Engine); every crate
 is imported with the matching `vnce_` name.
@@ -133,6 +134,23 @@ converted through the same pixel modes. Enabled with a `gpu` feature flag.
   macOS (GPU tests on software adapters), Rust 1.87, `cargo-deny` and the per-crate
   license files. Releases follow [`RELEASING.md`](RELEASING.md).
 
+### Game core
+
+`vnce_game` holds the parts every 2D game needs, without imposing an architecture (no
+ECS):
+
+- `ActionMap<A>`: the game asks about its own actions; keys and mouse buttons are bound to
+  them and can be rebound at run time.
+- Collision: `Aabb`; `move_and_collide` moves a box through solid tiles axis by axis and
+  checks every tile on the way (no tunnelling at any speed); `SpatialGrid` for many
+  objects.
+- `SpriteSheet` / `Animation` (loop, once, ping-pong, per-frame durations) / `Animator`.
+- `TileMap` (layers, loaded from text, solid tiles from the `Tileset`, draws only what is
+  visible) and `Camera` (follow with smoothing and dead zone, world bounds, shake,
+  interpolation with `ctx.alpha()`, pixel-rounded offsets).
+- `SceneStack` runs `Scene`s as a `Game`: push / pop / switch / quit transitions, overlays
+  drawn over the scenes below, data shared by all scenes. `Timer` and easing curves.
+
 ### Runtime
 
 A game loop with a fixed timestep, frame pacing and input dispatch:
@@ -186,5 +204,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-6-ui.md`](plans/2026-11-24-phase-6-ui.md).
 7. **Phase 7:** CI and release readiness — see
    [`plans/2026-11-24-phase-7-ci-and-release.md`](plans/2026-11-24-phase-7-ci-and-release.md).
+8. **Phase 8:** Game core (`vnce-game`) — see
+   [`plans/2026-11-24-phase-8-game-core.md`](plans/2026-11-24-phase-8-game-core.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

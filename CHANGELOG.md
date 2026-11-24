@@ -97,6 +97,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI (GitHub Actions) on Windows, Linux and macOS, a Rust 1.87 check, `cargo-deny`
   (`deny.toml`) and a check of the per-crate license files. Release steps in
   `docs/RELEASING.md`.
+- `vnce-game` (`vnce_game`, feature `game` of `vnce`, on by default): `ActionMap` key
+  bindings; `Aabb`, `move_and_collide` (through solid tiles, no tunnelling) and
+  `SpatialGrid`; `SpriteSheet`, `Animation` (loop, once, ping-pong) and `Animator`;
+  `TileMap` (layers, loaded from text) with `Tileset`; `Camera` (follow, smoothing, dead
+  zone, bounds, shake, interpolation); `Scene` / `SceneStack` (push, pop, switch, overlays,
+  shared data); `Timer` and easing curves.
+- `platformer` example: an original platformer with a text level, an animated player,
+  coins, a goal, a following camera and title, play, pause and finish scenes.
 
 ### Changed
 

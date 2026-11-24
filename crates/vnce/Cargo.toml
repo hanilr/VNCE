@@ -26,11 +26,15 @@ vnce-runtime.workspace = true
 vnce-raster = { workspace = true, features = ["png"] }
 vnce-gpu = { workspace = true, optional = true }
 vnce-ui = { workspace = true, optional = true }
+vnce-game = { workspace = true, optional = true }
 
 [features]
-default = ["ui"]
+default = ["ui", "game"]
 # Widgets (`vnce::vnce_ui`): layout, text, blocks, gauges, lists. Light, on by default.
 ui = ["dep:vnce-ui"]
+# Game building blocks (`vnce::vnce_game`): key bindings, collision, sprites, tile maps,
+# camera, scenes. Light, on by default.
+game = ["dep:vnce-game"]
 # GPU rendering with wgpu (`vnce::vnce_gpu`). Off by default: wgpu is a large dependency.
 gpu = ["dep:vnce-gpu"]
 
@@ -45,6 +49,10 @@ required-features = ["gpu"]
 [[example]]
 name = "ui"
 required-features = ["ui"]
+
+[[example]]
+name = "platformer"
+required-features = ["game", "ui"]
 
 # docs.rs documents every optional feature.
 [package.metadata.docs.rs]

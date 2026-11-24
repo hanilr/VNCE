@@ -5,9 +5,9 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 6: core types, terminal layer, game loop, pixel
-> graphics, terminal graphics protocols, GPU rendering and widgets). The API is not stable
-> yet.
+> **Status:** early development (Phase 8: core types, terminal layer, game loop, pixel
+> graphics, terminal graphics protocols, GPU rendering, widgets and game building blocks).
+> The API is not stable yet.
 
 ## Usage
 
@@ -53,12 +53,18 @@ For interfaces, `vnce_ui` (feature `ui`, on by default) has a small set of widge
 `FpsOverlay` and `Clear` (popups). They draw into `frame.buffer_mut()` next to pixel
 graphics.
 
+For games, `vnce_game` (feature `game`, on by default) has key bindings (`ActionMap`),
+collision (`Aabb`, `move_and_collide` through solid tiles, `SpatialGrid`), sprite sheets
+and animation, tile maps loaded from text, a following `Camera`, scenes (`SceneStack`:
+title, play, pause …) and timers.
+
 Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
 cargo run --example hello             # styles, colors, Unicode, input events
 cargo run --example stars             # a small game: arrows/WASD, +/- to change the FPS
 cargo run --example ui                # widgets: menu, gauges, chart, popup, FPS overlay
+cargo run --release --example platformer   # a small platformer: arrows/WASD, Space, P
 cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
 cargo run --release --example raster -- image.png   # show a PNG image
 cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method
@@ -112,6 +118,7 @@ Releases are described in [`docs/RELEASING.md`](docs/RELEASING.md).
 | `crates/vnce-raster/`     | Pixel canvas and pixel modes (`vnce_raster`). |
 | `crates/vnce-gpu/`        | GPU rendering with `wgpu` (`vnce_gpu`).       |
 | `crates/vnce-ui/`         | Widgets (`vnce_ui`).                          |
+| `crates/vnce-game/`       | Game building blocks (`vnce_game`).           |
 | `tools/gen-block-tables/` | Generates block-character tables.             |
 | `docs/ARCHITECTURE.md`    | High-level design.                            |
 | `docs/plans/`             | Approved implementation plans.                |

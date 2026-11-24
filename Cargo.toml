@@ -23,6 +23,7 @@ pedantic = { level = "warn", priority = -1 }
 [workspace.dependencies]
 # Internal crates.
 vnce-core = { path = "crates/vnce-core", version = "0.1.0" }
+vnce-game = { path = "crates/vnce-game", version = "0.1.0" }
 vnce-gpu = { path = "crates/vnce-gpu", version = "0.1.0" }
 vnce-raster = { path = "crates/vnce-raster", version = "0.1.0", default-features = false }
 vnce-runtime = { path = "crates/vnce-runtime", version = "0.1.0" }

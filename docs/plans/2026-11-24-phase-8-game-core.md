@@ -67,3 +67,19 @@ queries go through `InputState`: `is_down`, `was_pressed`, `was_released`, and
 
 - `move_and_collide` steps through fast movement; very fast objects cost a little more.
 - No ECS: the engine does not impose a game architecture.
+
+## Implementation notes
+
+- `move_and_collide` does not step: it checks every tile column (or row) between the old
+  and the new edge, which is exact at any speed and cheaper than stepping. Tiles the box
+  already overlaps are ignored, so it can always move out of a wall. A randomized test
+  (200 random maps × 100 random moves, small, huge and tile-aligned) checks that boxes
+  never end inside a solid tile.
+- `Scene` takes the shared data as a generic parameter (`Scene<D = ()>`); `render` only
+  gets `&D`. Popping the last scene quits the game.
+- `Camera::offset` rounds to whole pixels so tiles do not shimmer while scrolling.
+- The platformer renders at most about 15 tiles high and enlarges by a whole factor
+  without blurring (nearest neighbour) for graphics protocols; it starts in a cell mode.
+  The jump has coyote time and a jump buffer, and releasing jump early makes a lower jump.
+- The demo was checked by running it on a `TestBackend` with scripted keys (start, run,
+  jump, pause) and turning half-block frames back into images.
