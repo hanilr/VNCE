@@ -63,3 +63,18 @@ Supported platforms in the README; ARCHITECTURE updated.
   fixes.
 - GitHub's macOS runners may have no Metal adapter; GPU tests then skip.
 - Randomized tests are not a replacement for coverage-guided fuzzing.
+
+## Implementation notes
+
+- The randomized tests found a real bug: an unterminated APC / DCS / OSC answer (or a CSI
+  sequence with an `ESC` inside) made the query parser drop everything after it, including
+  the DA1 answer that ends the query. An `ESC` inside a sequence now cancels it, as in
+  xterm. Fixed in its own commit.
+- `homepage` was dropped again: cargo warns that it duplicates `repository`.
+- The dependency licenses were listed with `cargo metadata` to write `deny.toml` (MIT,
+  Apache-2.0 with or without the LLVM exception, Zlib, BSD-2-Clause, ISC, 0BSD,
+  Unicode-3.0); cargo-deny itself was not installed locally.
+- Rust 1.87 is not installed locally either; clippy's MSRV-aware lints (which read
+  `rust-version`) are clean and the code uses no newer syntax (no let chains). The CI
+  job will confirm it.
+- The workflow has not run yet (no remote).

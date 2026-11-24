@@ -122,6 +122,16 @@ converted through the same pixel modes. Enabled with a `gpu` feature flag.
   and MSAA, lowered to what the adapter supports), with a small `Mat4` type. Users can
   also write their own `wgpu` passes; the `wgpu` crate is re-exported.
 
+### Quality
+
+- Unit tests next to the code; randomized robustness tests (`tests/robustness.rs` in each
+  crate, own deterministic generator) check invariants on thousands of random inputs: no
+  panics, nothing drawn outside its area, encoder output that decodes back to the input,
+  frames that reach the emulated screen exactly.
+- CI (GitHub Actions): fmt, clippy and tests with warnings as errors on Windows, Linux and
+  macOS (GPU tests on software adapters), Rust 1.87, `cargo-deny` and the per-crate
+  license files. Releases follow [`RELEASING.md`](RELEASING.md).
+
 ### Runtime
 
 A game loop with a fixed timestep, frame pacing and input dispatch:
@@ -171,7 +181,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-4-graphics-protocols.md`](plans/2026-11-24-phase-4-graphics-protocols.md).
 5. **Phase 5:** `vnce-gpu` — `wgpu` renderer — see
    [`plans/2026-11-24-phase-5-gpu.md`](plans/2026-11-24-phase-5-gpu.md).
-6. **Phase 6:** `vnce-ui` — widgets — see
-   [`plans/2026-11-24-phase-6-ui.md`](plans/2026-11-24-phase-6-ui.md).
+. **Phase 7:** CI and release readiness — see
+   [`plans/2026-11-24-phase-7-ci-and-release.md`](plans/2026-11-24-phase-7-ci-and-release.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

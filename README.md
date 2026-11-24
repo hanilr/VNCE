@@ -75,6 +75,19 @@ Environment overrides:
 - `VNCE_GPU_BACKEND`: `vulkan`, `dx12`, `metal` or `gl` (comma-separated list).
 - `VNCE_GPU_POWER`: `high` (fastest GPU, default) or `low` (most power-efficient GPU).
 
+## Supported platforms
+
+| Platform | Terminals                                                     | GPU backends         |
+| -------- | ------------------------------------------------------------- | -------------------- |
+| Windows  | Windows Terminal, classic console (conhost)                   | DX12, Vulkan, OpenGL |
+| Linux    | Kitty, WezTerm, foot, Ghostty, Alacritty, GNOME, Konsole, xterm | Vulkan, OpenGL       |
+| macOS    | Terminal.app, iTerm2, Kitty, WezTerm, Ghostty                 | Metal                |
+
+Every feature falls back gracefully: cells instead of graphics protocols, half blocks or
+ASCII instead of finer pixel modes, 256 or 16 colors instead of truecolor, and a software
+GPU adapter (or the CPU renderer) without a GPU. The CI workflow
+(`.github/workflows/ci.yml`) tests all three platforms.
+
 ## Building
 
 Requires Rust 1.87 or newer.
@@ -85,6 +98,8 @@ cargo test
 cargo clippy --all-targets --all-features
 cargo fmt --all --check
 ```
+
+Releases are described in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Project layout
 
