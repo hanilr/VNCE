@@ -90,6 +90,7 @@ cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G:
 cargo run --release --example image -- photo.png
 cargo run --release --features gpu --example gpu_shader   # GPU raymarching; G: method
 cargo run --release --features gpu --example gpu_cube     # GPU 3D cubes; M: anti-aliasing
+cargo run --release --example perf    # timings of the per-frame work (no screen output)
 ```
 
 Environment overrides:
