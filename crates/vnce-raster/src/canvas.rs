@@ -1,6 +1,6 @@
 //! The pixel canvas.
 
-use crate::color::{BlendMode, Rgba, to_u8};
+use crate::color::{BlendMode, Rgba, blend_span, to_u8};
 
 /// A rectangle in pixel coordinates. `x` and `y` may be negative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -276,6 +276,18 @@ impl Canvas {
             y1: i64::from(y) + height,
         }
         .intersect(self.bounds());
+        if target.is_empty() {
+            return;
+        }
+        // Source columns of the first and last target column.
+        let (first_dx, last_dx) = (target.x0 - i64::from(x), target.x1 - 1 - i64::from(x));
+        let (sx_first, sx_last) = if options.flip_x {
+            (source.x1 - 1 - first_dx, source.x1 - 1 - last_dx)
+        } else {
+            (source.x0 + first_dx, source.x0 + last_dx)
+        };
+        let blend = self.blend;
+        let plain = options.color_key.is_none() && options.opacity == 255;
         for ty in target.y0..target.y1 {
             let dy = ty - i64::from(y);
             let sy = if options.flip_y {
@@ -283,28 +295,27 @@ impl Canvas {
             } else {
                 source.y0 + dy
             };
-            for tx in target.x0..target.x1 {
-                let dx = tx - i64::from(x);
-                let sx = if options.flip_x {
-                    source.x1 - 1 - dx
-                } else {
-                    source.x0 + dx
-                };
-                let Some(index) = src.index(sx, sy) else {
-                    continue;
-                };
-                let mut pixel = src.pixels[index];
-                if options
-                    .color_key
-                    .is_some_and(|key| (key.r, key.g, key.b) == (pixel.r, pixel.g, pixel.b))
-                {
-                    continue;
-                }
-                if options.opacity < 255 {
-                    let alpha = u16::from(pixel.a) * u16::from(options.opacity) / 255;
-                    pixel.a = u8::try_from(alpha).unwrap_or(u8::MAX);
-                }
-                self.put(tx, ty, pixel);
+            // Whole rows at once: the target row and the matching source row.
+            let (Some(t0), Some(t1)) = (self.index(target.x0, ty), self.index(target.x1 - 1, ty))
+            else {
+                continue;
+            };
+            let (Some(s0), Some(s1)) = (
+                src.index(sx_first.min(sx_last), sy),
+                src.index(sx_first.max(sx_last), sy),
+            ) else {
+                continue;
+            };
+            let row = &mut self.pixels[t0..=t1];
+            let source_row = &src.pixels[s0..=s1];
+            if plain && blend == BlendMode::Replace && !options.flip_x {
+                row.copy_from_slice(source_row);
+                continue;
+            }
+            if options.flip_x {
+                blit_row(row, source_row.iter().rev(), options, blend);
+            } else {
+                blit_row(row, source_row.iter(), options, blend);
             }
         }
     }
@@ -402,9 +413,36 @@ impl Canvas {
         }
         let start = x0.max(bounds.x0);
         let end = (x1 + 1).min(bounds.x1);
-        for x in start..end {
-            self.put(x, y, color);
+        if start >= end {
+            return;
         }
+        // The whole span at once: `bounds` lies inside the canvas.
+        if let (Some(first), Some(last)) = (self.index(start, y), self.index(end - 1, y)) {
+            blend_span(&mut self.pixels[first..=last], color, self.blend);
+        }
+    }
+}
+
+/// Blends one row of a blit: `source` yields the source pixels in target order.
+fn blit_row<'a>(
+    row: &mut [Rgba],
+    source: impl Iterator<Item = &'a Rgba>,
+    options: BlitOptions,
+    blend: BlendMode,
+) {
+    for (target, &source) in row.iter_mut().zip(source) {
+        let mut pixel = source;
+        if options
+            .color_key
+            .is_some_and(|key| (key.r, key.g, key.b) == (pixel.r, pixel.g, pixel.b))
+        {
+            continue;
+        }
+        if options.opacity < 255 {
+            let alpha = u16::from(pixel.a) * u16::from(options.opacity) / 255;
+            pixel.a = u8::try_from(alpha).unwrap_or(u8::MAX);
+        }
+        *target = target.blend(pixel, blend);
     }
 }
 

@@ -107,6 +107,22 @@ impl Rgba {
             _ => {}
         }
         let sa = u32::from(src.a);
+        if self.a == 255 {
+            // Opaque destination (the common case): the formula below with da = 255, so
+            // out_a is the constant 255 * 255 and the division needs no divide instruction.
+            let channel = |d: u8, s: u8| {
+                let s = mix(d, s);
+                let value =
+                    (u32::from(s) * sa * 255 + u32::from(d) * 255 * (255 - sa) + 65_025 / 2)
+                        / 65_025;
+                u8::try_from(value).unwrap_or(u8::MAX)
+            };
+            return Self::rgb(
+                channel(self.r, src.r),
+                channel(self.g, src.g),
+                channel(self.b, src.b),
+            );
+        }
         let da = u32::from(self.a);
         // out_a = sa + da * (1 - sa), in 0..=255 * 255.
         let out_a = sa * 255 + da * (255 - sa);
@@ -138,6 +154,34 @@ impl From<(u8, u8, u8)> for Rgba {
 impl From<(u8, u8, u8, u8)> for Rgba {
     fn from((r, g, b, a): (u8, u8, u8, u8)) -> Self {
         Self::new(r, g, b, a)
+    }
+}
+
+/// Blends `color` into every pixel of `pixels` (one row of a shape), with the same result
+/// as [`Rgba::blend`] on each pixel. Common cases skip the per-pixel work.
+pub(crate) fn blend_span(pixels: &mut [Rgba], color: Rgba, mode: BlendMode) {
+    match mode {
+        BlendMode::Replace => pixels.fill(color),
+        // An opaque source replaces any destination.
+        BlendMode::Alpha if color.a == 255 => pixels.fill(color),
+        // A transparent source leaves every destination unchanged.
+        _ if color.a == 0 => {}
+        // One arm per mode, so the mode is not matched again for every pixel.
+        BlendMode::Alpha => {
+            for pixel in pixels {
+                *pixel = pixel.blend(color, BlendMode::Alpha);
+            }
+        }
+        BlendMode::Add => {
+            for pixel in pixels {
+                *pixel = pixel.blend(color, BlendMode::Add);
+            }
+        }
+        BlendMode::Multiply => {
+            for pixel in pixels {
+                *pixel = pixel.blend(color, BlendMode::Multiply);
+            }
+        }
     }
 }
 
@@ -175,6 +219,51 @@ pub(crate) fn to_u8(value: f32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The general compositing formula, without the opaque-destination shortcut.
+    fn composite_reference(dst: Rgba, src: Rgba, mix: impl Fn(u8, u8) -> u8) -> Rgba {
+        let (sa, da) = (u32::from(src.a), u32::from(dst.a));
+        let out_a = sa * 255 + da * (255 - sa);
+        let channel = |d: u8, s: u8| {
+            let s = if dst.a == 0 { s } else { mix(d, s) };
+            let value =
+                (u32::from(s) * sa * 255 + u32::from(d) * da * (255 - sa) + out_a / 2) / out_a;
+            u8::try_from(value).unwrap_or(u8::MAX)
+        };
+        Rgba::new(
+            channel(dst.r, src.r),
+            channel(dst.g, src.g),
+            channel(dst.b, src.b),
+            div255(out_a),
+        )
+    }
+
+    #[test]
+    fn opaque_destination_shortcut_matches_the_formula() {
+        type Mix = fn(u8, u8) -> u8;
+        let mixes: [(BlendMode, Mix); 3] = [
+            (BlendMode::Alpha, |_, s| s),
+            (BlendMode::Add, u8::saturating_add),
+            (BlendMode::Multiply, |d, s| {
+                div255(u32::from(d) * u32::from(s))
+            }),
+        ];
+        for (mode, mix) in mixes {
+            for sa in 1..=254u8 {
+                for d in (0..=255u8).step_by(3) {
+                    for s in (0..=255u8).step_by(5) {
+                        let dst = Rgba::rgb(d, 255 - d, d / 2);
+                        let src = Rgba::new(s, d, 255 - s, sa);
+                        assert_eq!(
+                            dst.blend(src, mode),
+                            composite_reference(dst, src, mix),
+                            "{mode:?} {dst:?} {src:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn opaque_alpha_blend_replaces() {

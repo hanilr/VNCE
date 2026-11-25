@@ -14,7 +14,9 @@ use vnce_core::{Buffer, Cell, Rect, Size};
 #[cfg(feature = "png")]
 use vnce_raster::protocol::iterm2;
 use vnce_raster::protocol::{base64, kitty, sixel};
-use vnce_raster::{BlendMode, BlitOptions, Canvas, PixelMode, Quality, RenderOptions, Rgba};
+use vnce_raster::{
+    BlendMode, BlitOptions, Canvas, PixelMode, PixelRect, Quality, RenderOptions, Rgba,
+};
 
 /// A small deterministic random generator (xorshift64*), so failures can be reproduced.
 struct Rng(u64);
@@ -103,6 +105,124 @@ fn drawing_anywhere_never_panics() {
             }
         }
         assert_eq!(canvas.pixels().len(), (width * height) as usize);
+    }
+}
+
+/// Draws `src` pixel by pixel with [`Canvas::pixel`], the way `blit_region` worked before
+/// it drew whole rows.
+fn blit_reference(
+    canvas: &mut Canvas,
+    src: &Canvas,
+    region: PixelRect,
+    x: i32,
+    y: i32,
+    options: BlitOptions,
+) {
+    if options.opacity == 0 {
+        return;
+    }
+    let sx0 = i64::from(region.x).max(0);
+    let sy0 = i64::from(region.y).max(0);
+    let sx1 = (i64::from(region.x) + i64::from(region.width)).min(i64::from(src.width()));
+    let sy1 = (i64::from(region.y) + i64::from(region.height)).min(i64::from(src.height()));
+    for dy in 0..(sy1 - sy0).max(0) {
+        let sy = if options.flip_y {
+            sy1 - 1 - dy
+        } else {
+            sy0 + dy
+        };
+        for dx in 0..(sx1 - sx0).max(0) {
+            let sx = if options.flip_x {
+                sx1 - 1 - dx
+            } else {
+                sx0 + dx
+            };
+            let (Ok(sx), Ok(sy)) = (u32::try_from(sx), u32::try_from(sy)) else {
+                continue;
+            };
+            let Some(mut pixel) = src.get(sx, sy) else {
+                continue;
+            };
+            if options
+                .color_key
+                .is_some_and(|key| (key.r, key.g, key.b) == (pixel.r, pixel.g, pixel.b))
+            {
+                continue;
+            }
+            if options.opacity < 255 {
+                pixel.a = (u16::from(pixel.a) * u16::from(options.opacity) / 255) as u8;
+            }
+            let (tx, ty) = (i64::from(x) + dx, i64::from(y) + dy);
+            if let (Ok(tx), Ok(ty)) = (i32::try_from(tx), i32::try_from(ty)) {
+                canvas.pixel(tx, ty, pixel);
+            }
+        }
+    }
+}
+
+#[test]
+fn row_fast_paths_match_pixel_by_pixel_drawing() {
+    let modes = [
+        BlendMode::Replace,
+        BlendMode::Alpha,
+        BlendMode::Add,
+        BlendMode::Multiply,
+    ];
+    let mut rng = Rng::new(0x0b5e_55ed);
+    for _ in 0..4000 {
+        let mut canvas = rng.canvas(24);
+        canvas.set_blend_mode(modes[rng.below(4) as usize]);
+        if rng.below(3) == 0 {
+            let clip = PixelRect::new(
+                rng.below(30) as i32 - 5,
+                rng.below(30) as i32 - 5,
+                rng.below(30) as u32,
+                rng.below(30) as u32,
+            );
+            canvas.set_clip(Some(clip));
+        }
+        let mut expected = canvas.clone();
+        // Opaque and transparent colors take their own paths.
+        let color = match rng.below(4) {
+            0 => rng.color().with_alpha(255),
+            1 => rng.color().with_alpha(0),
+            _ => rng.color(),
+        };
+        if rng.below(2) == 0 {
+            let (x, y) = (rng.coordinate(24), rng.coordinate(24));
+            let (width, height) = (rng.below(30) as u32, rng.below(30) as u32);
+            canvas.fill_rect(x, y, width, height, color);
+            for py in 0..i64::from(height) {
+                for px in 0..i64::from(width) {
+                    let (tx, ty) = (i64::from(x) + px, i64::from(y) + py);
+                    if let (Ok(tx), Ok(ty)) = (i32::try_from(tx), i32::try_from(ty)) {
+                        expected.pixel(tx, ty, color);
+                    }
+                }
+            }
+        } else {
+            let src = rng.canvas(20);
+            let region = PixelRect::new(
+                rng.below(30) as i32 - 5,
+                rng.below(30) as i32 - 5,
+                rng.below(30) as u32,
+                rng.below(30) as u32,
+            );
+            let options = BlitOptions {
+                flip_x: rng.below(2) == 0,
+                flip_y: rng.below(2) == 0,
+                color_key: (rng.below(3) == 0).then(|| rng.color()),
+                opacity: match rng.below(3) {
+                    0 => 255,
+                    1 => 0,
+                    _ => rng.below(256) as u8,
+                },
+            };
+            let (x, y) = (rng.coordinate(24), rng.coordinate(24));
+            canvas.blit_region(&src, region, x, y, options);
+            blit_reference(&mut expected, &src, region, x, y, options);
+        }
+        assert_eq!(canvas.pixels(), expected.pixels());
     }
 }
 
