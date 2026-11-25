@@ -42,7 +42,7 @@ public. Nothing is published on crates.io in this phase.
   name or private address left in any commit or message, the same 91 commits, and the
   new tip passing fmt, clippy and every test. A bundle of the old history was kept
   outside the repository until the push succeeded.
-- `` in the rename rules was first written as a backspace character by an editing
+- `\b` in the rename rules was first written as a backspace character by an editing
   script, so some rules silently matched nothing; the rule file was rewritten whole and
   every rule tested on sample text before the real run.
 - The first CI run failed on three things, each fixed in its own commit: the MSRV build
