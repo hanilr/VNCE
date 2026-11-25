@@ -96,13 +96,35 @@ impl Default for BlitOptions {
 ///
 /// Every drawing function goes through the clip rectangle and the blend mode, except
 /// [`Canvas::clear`], which always overwrites the whole canvas.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Canvas {
     width: u32,
     height: u32,
     pixels: Vec<Rgba>,
     clip: Option<PixelRect>,
     blend: BlendMode,
+}
+
+impl Clone for Canvas {
+    fn clone(&self) -> Self {
+        Self {
+            width: self.width,
+            height: self.height,
+            pixels: self.pixels.clone(),
+            clip: self.clip,
+            blend: self.blend,
+        }
+    }
+
+    /// Copies `source` into this canvas, reusing its pixel memory when it is large
+    /// enough (no allocation for canvases of the same size).
+    fn clone_from(&mut self, source: &Self) {
+        self.width = source.width;
+        self.height = source.height;
+        self.pixels.clone_from(&source.pixels);
+        self.clip = source.clip;
+        self.blend = source.blend;
+    }
 }
 
 impl Canvas {
@@ -753,6 +775,24 @@ mod tests {
         assert_eq!(canvas.get(0, 0), Some(Rgba::TRANSPARENT));
         assert_eq!(canvas.get(1, 1), Some(R));
         assert_eq!(canvas.get(3, 3), Some(Rgba::TRANSPARENT));
+    }
+
+    #[test]
+    fn clone_from_copies_everything_and_reuses_memory() {
+        let mut source = Canvas::filled(3, 2, R);
+        source.set_clip(Some(PixelRect::new(0, 0, 1, 1)));
+        source.set_blend_mode(BlendMode::Add);
+        let mut target = Canvas::filled(3, 2, G);
+        let memory = target.pixels().as_ptr();
+        target.clone_from(&source);
+        assert_eq!(target, source);
+        assert_eq!(target.pixels().as_ptr(), memory);
+        // A smaller source keeps the larger memory; a larger one grows it.
+        target.clone_from(&Canvas::filled(1, 1, G));
+        assert_eq!((target.width(), target.height()), (1, 1));
+        assert_eq!(target.pixels(), &[G]);
+        target.clone_from(&Canvas::filled(4, 4, R));
+        assert_eq!(target, Canvas::filled(4, 4, R));
     }
 
     #[test]

@@ -135,6 +135,7 @@ pub struct Frame<'a> {
     cell_pixels: (u16, u16),
     images: &'a mut Vec<ImageRequest>,
     placed: &'a [PlacedImage],
+    spare: &'a mut Vec<Canvas>,
     scale_quality: ScaleQuality,
 }
 
@@ -171,11 +172,20 @@ impl Frame<'_> {
                     .iter()
                     .any(|placed| placed.area == area && same_pixels(&placed.canvas, canvas));
                 // A later image in the same area replaces an earlier one.
-                self.images.retain(|request| request.area != area);
-                self.images.push(ImageRequest {
-                    area,
-                    canvas: (!on_screen).then(|| canvas.clone()),
+                if let Some(index) = self.images.iter().position(|r| r.area == area) {
+                    let earlier = self.images.remove(index);
+                    recycle(self.spare, earlier.canvas);
+                }
+                // The copy goes into the memory of an image that left the screen, when
+                // there is one, instead of a new allocation.
+                let copy = (!on_screen).then(|| match self.spare.pop() {
+                    Some(mut spare) => {
+                        spare.clone_from(canvas);
+                        spare
+                    }
+                    None => canvas.clone(),
                 });
+                self.images.push(ImageRequest { area, canvas: copy });
             }
         }
     }
@@ -330,6 +340,9 @@ struct ImageState {
     requests: Vec<ImageRequest>,
     /// Images currently on the screen (graphics protocols only).
     placed: Vec<PlacedImage>,
+    /// Canvases of images that left the screen, reused for the copies of new images (at
+    /// most [`SPARE_CANVASES`]).
+    spare: Vec<Canvas>,
     /// Whether Kitty images may be on the screen (they survive clearing the screen).
     kitty_shown: bool,
     next_id: u32,
@@ -397,6 +410,7 @@ impl<B: Backend> Terminal<B> {
             images: ImageState {
                 requests: Vec::new(),
                 placed: Vec::new(),
+                spare: Vec::new(),
                 kitty_shown: false,
                 next_id: 1,
                 free_ids: Vec::new(),
@@ -571,6 +585,7 @@ impl<B: Backend> Terminal<B> {
             cell_pixels,
             images: &mut self.images.requests,
             placed: &self.images.placed,
+            spare: &mut self.images.spare,
             scale_quality: self.images.scale_quality,
         };
         render(&mut frame);
@@ -815,11 +830,12 @@ impl ImageState {
                     self.placed.push(placed);
                 }
                 // The terminal is catching up: the old image stays for now.
-                (Some(placed), Some(_)) if self.defer && can_update => {
+                (Some(placed), Some(canvas)) if self.defer && can_update => {
                     if !kitty {
                         copy_cells(previous, current, request.area);
                     }
                     self.placed.push(placed);
+                    recycle(&mut self.spare, Some(canvas));
                 }
                 // The image in this area changed: send only what changed when possible.
                 (Some(mut placed), Some(canvas)) => {
@@ -837,7 +853,8 @@ impl ImageState {
                             changed_parts(protocol, &placed, &canvas, shown.as_ref(), cell_pixels)
                         })
                         .flatten();
-                    placed.canvas = canvas;
+                    let old_canvas = std::mem::replace(&mut placed.canvas, canvas);
+                    recycle(&mut self.spare, Some(old_canvas));
                     placed.shown = shown;
                     match update {
                         Some(Change::Patches(areas)) => {
@@ -900,8 +917,8 @@ impl ImageState {
         }
 
         // Images that are gone.
-        if !full_redraw {
-            for placed in old.into_iter().flatten() {
+        for placed in old.into_iter().flatten() {
+            if !full_redraw {
                 if kitty {
                     for id in placed.kitty_ids() {
                         protocol::kitty::delete(id, out);
@@ -910,6 +927,7 @@ impl ImageState {
                     invalidate_cells(previous, placed.area);
                 }
             }
+            recycle(&mut self.spare, Some(placed.canvas));
         }
         if kitty && self.placeholders {
             // The cells of placeholder images show their placeholders, on every frame (the
@@ -1044,6 +1062,19 @@ enum Change {
     Patches(Vec<Rect>),
     /// Tiles of a Kitty image.
     Tiles(Vec<usize>),
+}
+
+/// How many canvases of images that left the screen are kept for reuse: enough for a few
+/// images changing every frame, without holding on to much memory.
+const SPARE_CANVASES: usize = 2;
+
+/// Keeps `canvas` for reuse if there is room among the spare canvases.
+fn recycle(spare: &mut Vec<Canvas>, canvas: Option<Canvas>) {
+    if let Some(canvas) = canvas {
+        if spare.len() < SPARE_CANVASES {
+            spare.push(canvas);
+        }
+    }
 }
 
 /// Sends patches only while they cover less than this share of the image; beyond it, one
@@ -2203,6 +2234,39 @@ mod tests {
             sequences(&mut terminal);
             terminal.draw(|f| f.draw_image(area, &wide)).unwrap();
             assert_ne!(sequences(&mut terminal), Vec::<String>::new());
+        }
+
+        #[test]
+        fn changed_images_reuse_the_memory_of_replaced_ones() {
+            let mut terminal = with_mode(KITTY, 10, 5);
+            let area = Rect::new(0, 0, 2, 2);
+            terminal
+                .draw(|f| f.draw_image(area, &image(Rgba::rgb(255, 0, 0))))
+                .unwrap();
+            terminal
+                .draw(|f| f.draw_image(area, &image(Rgba::rgb(0, 0, 255))))
+                .unwrap();
+            // The red canvas was replaced and kept for reuse.
+            assert_eq!(terminal.images.spare.len(), 1);
+            let memory = terminal.images.spare[0].pixels().as_ptr();
+            terminal
+                .draw(|f| f.draw_image(area, &image(Rgba::rgb(0, 255, 0))))
+                .unwrap();
+            assert_eq!(terminal.images.placed[0].canvas.pixels().as_ptr(), memory);
+            assert_eq!(
+                terminal.images.placed[0].canvas,
+                image(Rgba::rgb(0, 255, 0))
+            );
+            // Images that leave the screen are kept too, up to the limit.
+            terminal
+                .draw(|f| {
+                    for x in 0..4 {
+                        f.draw_image(Rect::new(x * 2, 3, 2, 2), &image(Rgba::WHITE));
+                    }
+                })
+                .unwrap();
+            terminal.draw(|_| {}).unwrap();
+            assert_eq!(terminal.images.spare.len(), SPARE_CANVASES);
         }
 
         #[test]
