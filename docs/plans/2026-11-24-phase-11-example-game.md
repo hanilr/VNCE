@@ -52,6 +52,13 @@ and volume settings, sound and music with `--features audio`.
 
 ## Resume here (next session)
 
+**Update after the second session:** Phase 11 is closed (see the progress and
+implementation notes below). The user ran Lantern and found the pixel title and heads-up
+display good enough. No later phase is planned yet: the next session starts by asking the
+user for the next goal and writing a new plan in `docs/plans/`.
+
+The text below is the state after the first session, kept for history.
+
 State at the end of the first session: everything is committed on `main` (Lantern in
 `crates/vnce/examples/lantern.rs`, settings with volumes, frame rate and display method).
 The user tried the game: it works; half blocks run at about 110 FPS in Windows Terminal.
