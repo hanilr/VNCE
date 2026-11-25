@@ -143,9 +143,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one or all to the defaults; keys used twice are marked.
 - Tutorial in `docs/tutorial/` (eight chapters, from the first window to sound and
   performance); its code blocks are compiled and run as doc-tests of `vnce`.
+- `perf` example: timings of the per-frame work (terminal output, diffing, canvas
+  drawing, scaling) without screen output.
+- `Buffer::diff_iter` (and the `Diff` iterator): the changed cells without collecting
+  them.
+- `ansi::move_right` (`CSI n C`); `TestBackend` understands `CSI n C` and `CSI n G`.
+- `ScaleQuality` (`Fast`, `Exact`), `Canvas::scaled_with`, `Terminal::scale_quality` /
+  `set_scale_quality` and the `VNCE_SCALE_QUALITY` environment variable.
 
 ### Changed
 
+- Faster per-frame work (Phase 12, measured with the `perf` example): a full-screen
+  truecolor frame is written twice as fast, an empty frame or a mostly unchanged text
+  screen 2.5 times as fast; cell widths are cached, diffing does not allocate and escape
+  sequences are written without `write!`. Downsampling to 256 colors uses a table.
+- The terminal moves the cursor with `CSI n C` for jumps on the same row (9 % fewer bytes
+  for scattered changes).
+- Canvas: spans and blits are drawn row by row (opaque rectangles 11 times faster, blits
+  1.5 times), triangles search the ends of each row (1.6 times faster). The same pixels
+  are drawn as before.
+- `Canvas::scaled` uses two passes on several threads (4 times faster when enlarging to
+  1600 × 880); channels can differ by one from before, which `ScaleQuality::Exact` keeps.
+- Windows: `input::poll` (and so the game loop) ends its wait within about a millisecond
+  instead of on the system timer's 15.6 ms steps, so frames keep an even pace.
 - `Context::quit`, `set_paused`, `set_fps_limit`, `set_update_rate` and
   `set_graphics_mode` take `&self`, so they can be called while the input from
   `Context::input` is still borrowed. `Context` is no longer `Sync`.

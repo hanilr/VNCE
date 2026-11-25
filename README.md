@@ -5,9 +5,9 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 11: core types, terminal layer, game loop, pixel
+> **Status:** early development (Phase 12: core types, terminal layer, game loop, pixel
 > graphics, terminal graphics protocols, GPU rendering, widgets, game building blocks,
-> audio, an example game and a tutorial). The API is not stable yet.
+> audio, an example game, a tutorial and an optimization pass). The API is not stable yet.
 
 ## Usage
 

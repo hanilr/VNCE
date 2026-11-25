@@ -94,6 +94,11 @@ Speed (a 720p frame on the development machine):
 - SGR (style) sequences are emitted only when the style actually changes.
 - **Color depth detection** (truecolor / 256 / 16); colors are downsampled to the nearest
   supported color.
+- Per-frame cost (Phase 12): cells keep the width of their symbol (computed once when it
+  is set), `Buffer::diff_iter` yields the changed cells without allocating, escape
+  sequences are assembled from a digit table without the formatting machinery, and a jump
+  forward on the same row is sent as `CSI n C`. A full-screen truecolor frame of 200 × 60
+  cells is written in about 0.9 ms; `cargo run --release --example perf` measures it.
 
 ### Pixel modes
 
@@ -128,7 +133,18 @@ circles, triangles with a top-left fill rule and per-vertex gradients, sprite bl
 `Font` draws fixed-width bitmap text through the same clipping and blending: a built-in
 5×7 font (printable ASCII and the Turkish letters, designed for the engine), custom fonts
 from text art, integer scaling for titles.
-Optional parallelism may be added later.
+Optional parallelism may be added later. (Phase 12: scaling large images runs on several
+threads; drawing itself stays on one.)
+
+Horizontal spans (rectangles, circles, outlines) and blits work on row slices: opaque
+colors are filled directly, and blending over an opaque pixel divides by a constant.
+Triangles find the two ends of each row (every edge function is monotonic along a row, so
+the covered pixels form one run) instead of testing every pixel of their bounding box;
+the pixels drawn are exactly the same. `Canvas::scaled` applies its weights in two passes
+on several threads (`ScaleQuality::Fast`, channels within one of the exact result);
+`ScaleQuality::Exact` keeps the direct method, selectable per call
+(`Canvas::scaled_with`), per terminal (`Terminal::set_scale_quality`) or with
+`VNCE_SCALE_QUALITY`.
 
 ### GPU renderer
 
@@ -213,6 +229,10 @@ A game loop with a fixed timestep, frame pacing and input dispatch:
 - `InputState` tracks held keys. Terminals that report key releases (Windows, or the
   kitty keyboard protocol) give exact releases; elsewhere a timeout is used.
 - A `Driver` trait (clock + events) makes runs deterministic in tests (`ScriptedDriver`).
+- On Windows a wait for console input ends on the system timer's 15.6 ms steps, which
+  made 60 FPS frames alternate between 15.6 and 31 ms. `input::poll` waits coarsely only
+  while more than 16 ms remain and sleeps the rest in 1 ms steps (the standard library
+  uses a high-resolution timer), checking for events in between.
 - The methods of `Context` that request a change (`quit`, `set_paused`, `set_fps_limit`,
   `set_update_rate`, `set_graphics_mode`) take `&self` (the values live in `Cell`s), so
   they can be called while the input from `ctx.input()` is borrowed.
@@ -263,5 +283,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-10-protocol-performance.md`](plans/2026-11-24-phase-10-protocol-performance.md).
 11. **Phase 11:** Example game (Lantern), engine gaps it showed, and the tutorial — see
    [`plans/2026-11-24-phase-11-example-game.md`](plans/2026-11-24-phase-11-example-game.md).
+12. **Phase 12:** Optimization of the per-frame work — see
+   [`plans/2026-11-25-phase-12-optimization.md`](plans/2026-11-25-phase-12-optimization.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.
