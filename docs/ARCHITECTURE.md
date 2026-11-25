@@ -330,5 +330,13 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-20-gamepads-and-window.md`](plans/2026-11-25-phase-20-gamepads-and-window.md).
 21. **Phase 21 (planned):** Documentation, publishing and a wiki front page — see
    [`plans/2026-11-25-phase-21-docs-and-publishing.md`](plans/2026-11-25-phase-21-docs-and-publishing.md).
+22. **Phase 22 (planned):** Text in every language — see
+   [`plans/2026-11-25-phase-22-every-language.md`](plans/2026-11-25-phase-22-every-language.md).
+23. **Phase 23 (planned):** Assets and sounds — see
+   [`plans/2026-11-25-phase-23-assets-and-sounds.md`](plans/2026-11-25-phase-23-assets-and-sounds.md).
+24. **Phase 24 (planned):** Mobile platforms (Android and iOS) — see
+   [`plans/2026-11-25-phase-24-mobile.md`](plans/2026-11-25-phase-24-mobile.md).
+25. **Phase 25 (planned, research):** Higher bit depths and sample rates for sound — see
+   [`plans/2026-11-25-phase-25-high-resolution-audio.md`](plans/2026-11-25-phase-25-high-resolution-audio.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.
