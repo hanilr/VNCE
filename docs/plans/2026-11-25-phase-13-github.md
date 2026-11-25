@@ -53,11 +53,15 @@ public. Nothing is published on crates.io in this phase.
 - The GitHub CLI was installed with `winget` to follow CI runs (`gh run list`,
   `gh run view --log-failed`).
 
+- After the phase, at the user's request, `docs/RELEASING.md` became a local file: it is
+  in `.gitignore` and no longer tracked, and the README, ARCHITECTURE and CHANGELOG no
+  longer point to it. Earlier commits still contain it.
+
 ## Resume here (next session)
 
 Phase 13 is done and CI is green. The repository is still private. Possible next steps,
 to be agreed with the user: make the repository public (checklist in
-`docs/RELEASING.md`), publish 0.1.0 on crates.io, or a new feature phase.
+the local `docs/RELEASING.md`), publish 0.1.0 on crates.io, or a new feature phase.
 
 ## Dependencies
 

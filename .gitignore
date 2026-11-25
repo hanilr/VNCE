@@ -18,6 +18,9 @@ AGENTS.md
 CLAUDE.md
 .claude/settings.local.json
 
+# --- Local release notes (kept private, never published) ---
+docs/RELEASING.md
+
 # --- Environment / secrets ---
 .env
 .env.*

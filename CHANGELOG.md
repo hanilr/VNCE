@@ -95,8 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Randomized robustness tests for buffers, frames on the emulated screen, the terminal
   answer parser, drawing, pixel modes, the graphics protocol encoders, layouts and widgets.
 - CI (GitHub Actions) on Windows, Linux and macOS, a Rust 1.87 check, `cargo-deny`
-  (`deny.toml`) and a check of the per-crate license files. Release steps in
-  `docs/RELEASING.md`.
+  (`deny.toml`) and a check of the per-crate license files.
 - `vnce-game` (`vnce_game`, feature `game` of `vnce`, on by default): `ActionMap` key
   bindings; `Aabb`, `move_and_collide` (through solid tiles, no tunnelling) and
   `SpatialGrid`; `SpriteSheet`, `Animation` (loop, once, ping-pong) and `Animator`;
@@ -149,8 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them.
 - `ansi::move_right` (`CSI n C`); `TestBackend` understands `CSI n C` and `CSI n G`.
 - The repository is on GitHub (`https://github.com/hanilr/VNCE`) with CI on Windows,
-  Linux and macOS; `docs/RELEASING.md` covers the GitHub release and making the
-  repository public.
+  Linux and macOS.
 - `ScaleQuality` (`Fast`, `Exact`), `Canvas::scaled_with`, `Terminal::scale_quality` /
   `set_scale_quality` and the `VNCE_SCALE_QUALITY` environment variable.
 

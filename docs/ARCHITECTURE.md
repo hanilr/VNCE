@@ -173,7 +173,7 @@ converted through the same pixel modes. Enabled with a `gpu` feature flag.
   frames that reach the emulated screen exactly.
 - CI (GitHub Actions): fmt, clippy and tests with warnings as errors on Windows, Linux and
   macOS (GPU tests on software adapters), Rust 1.87, `cargo-deny` and the per-crate
-  license files. Releases follow [`RELEASING.md`](RELEASING.md).
+  license files.
 
 ### Game core
 

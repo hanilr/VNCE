@@ -131,8 +131,6 @@ cargo clippy --all-targets --all-features
 cargo fmt --all --check
 ```
 
-Releases are described in [`docs/RELEASING.md`](docs/RELEASING.md).
-
 ## Project layout
 
 | Path                      | Contents                                      |
