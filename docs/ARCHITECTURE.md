@@ -301,5 +301,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-15-real-pixel-speed.md`](plans/2026-11-25-phase-15-real-pixel-speed.md).
 16. **Phase 16:** The isometric 2.5D showcase Isle — see
    [`plans/2026-11-25-phase-16-isometric-demo.md`](plans/2026-11-25-phase-16-isometric-demo.md).
+17. **Phase 17:** Lit meshes and the 3D flight showcase Glide — see
+   [`plans/2026-11-25-phase-17-3d-flight-demo.md`](plans/2026-11-25-phase-17-3d-flight-demo.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

@@ -89,6 +89,7 @@ cargo run --release --example sfx --features audio          # sound effect works
 cargo run --release --example lantern      # a cave game: arrows/WASD, P, settings menu
 cargo run --release --example relay --features gpu,audio   # the showcase: every feature in one game
 cargo run --release --example isle --features gpu,audio    # the 2.5D showcase: an isometric island
+cargo run --release --example glide --features gpu,audio   # the 3D showcase: a flight through rings
 cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
 cargo run --release --example raster -- image.png   # show a PNG image
 cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method

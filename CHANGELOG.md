@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multiplied light layer, a minimap, gauges, menus, rebindable keys and a save file; an
   ocean from a GPU shader (`gpu`) or the CPU; sound with `audio`. `--bench` and a smoke
   test that goes through the menus.
+- `glide` example: the 3D showcase. Fly a small craft over endless low-poly land
+  generated from a six-letter code (seas, beaches, valleys, snowy ridges, trees and
+  rocks), built in chunks ahead of the craft. A ring course against the clock with
+  checkpoints, or free flight where every ring adds time; bank to turn, dive to gain
+  speed, rings give a boost. With `gpu` the meshes are lit and fogged by `MeshRenderer`
+  over a `ShaderQuad` sky with clouds, read back pipelined; without a GPU the CPU clips,
+  lights, fogs and sorts the triangles at lower detail. The day runs from sunrise towards
+  sunset. Chase, cockpit and orbit cameras (mouse drag), photo mode, exhaust trail,
+  sparks, speed lines, compass, radar, gauges, a blob shadow; an engine hum that follows
+  the speed with `audio`; menus, settings (renderer, MSAA, render resolution,
+  upscaling), rebindable keys and a save file. `--bench` and smoke tests.
 - `perf` example: full-screen Kitty and Sixel image scenarios (a still picture and a
   moving sprite), timing `draw_image` and the flush separately.
 - Initial Cargo workspace with the `vnce` crate (imported as `vnce`).

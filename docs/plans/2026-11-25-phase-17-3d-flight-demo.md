@@ -1,7 +1,7 @@
 # Plan: Phase 17 — Lit meshes and the 3D flight showcase "Glide"
 
 **Date:** 2026-11-25
-**Status:** Approved, in progress — step 2 done (the user chose a flight game, approved the engine
+**Status:** Done (the user chose a flight game, approved the engine
 extension and wants a CPU fallback; the whole plan of Phases 15–17 was approved on
 2026-11-25; after Phase 16 the user agreed to the wider scope below, so Glide, like Relay
 and Isle, shows everything it can, and asked to start it in a later session)
@@ -105,11 +105,61 @@ None.
   core are lit. Fog fades its alpha too, so Glide can fade terrain out over the sky (the
   target then holds premultiplied colors in partly transparent pixels; un-premultiply or
   composite accordingly in step 6).
+- Steps 3–8 done (the user asked to go on until the game is finished): terrain, models,
+  sky and both renderers in one commit (the CPU renderer of step 5 came early so the
+  viewer of step 3 ran without a GPU too); craft, camera, rings, collisions, the wider
+  scope of step 6 and the scenes of step 7 in one commit (`Glide: the game`), as they were
+  built and tested together; then the bench, smoke tests, snapshots and these docs.
+
+## Results
+
+`cargo run --release --example glide --features gpu -- --bench` (200 × 60 cells, 480
+frames of the autopilot flying a course; development machine with an RTX 5070 Laptop GPU;
+Kitty and Sixel pictures are 2000 × 1140 pixels at the default cell size):
+
+| Display method | GPU per frame | GPU world | CPU per frame | CPU world | Output (GPU) |
+| -------------- | ------------- | --------- | ------------- | --------- | ------------ |
+| Half blocks    | 2.8 ms        | 1.7 ms    | 3.1 ms        | 2.5 ms    | 258 KB       |
+| Sextants       | 4.2 ms        | 1.6 ms    | 4.6 ms        | 2.5 ms    | 297 KB       |
+| Braille        | 4.2 ms        | 2.0 ms    | 4.8 ms        | 3.1 ms    | 291 KB       |
+| Kitty          | 26.7 ms       | 10.4 ms   | 29.4 ms       | 18.4 ms   | 1334 KB      |
+| Sixel          | 28.0 ms       | 10.5 ms   | 33.5 ms       | 18.3 ms   | 603 KB       |
+
+"World" is the 3D picture with the sky; the rest is the instruments, the text and
+encoding the picture for the terminal. The GPU draws the chunks within about 1.4 km at
+full detail; the CPU those within about 850 m at half detail, trees and rocks only up to
+520 m. Laying the meshes over the sky first
+took 47 ms on a full-size picture; looking the sky up on a coarse grid and blending in
+whole numbers brought it to 9 ms. The render resolution setting (75, 50, 33 %) lowers
+both further.
+
+## Implementation notes
+
+- The CPU renderer must work without the `gpu` feature, where `vnce_gpu::Mat4` does not
+  exist, so Glide has its own small `Mat4` with the same layout (converted for free on the
+  GPU path). A math module that does not need the GPU would be a small engine addition
+  for later.
+- `ShaderQuad` passes only the time and a frame number. The sky is therefore a panorama
+  (azimuth across, elevation down) that the GPU draws with the day's progress packed into
+  the frame number; every pixel of the picture looks it up along its view direction, so
+  it turns and tilts with the camera without an engine change.
+- The meshes are rendered on a transparent background with fog whose color has alpha 0:
+  far terrain fades out and the target holds premultiplied colors there, which the
+  composition adds to the sky (`front + sky × (1 − alpha)`).
+- The GPU's picture arrives a frame late (pipelined readback); the renderer returns the
+  camera it was taken with, and the trail, sparks and instruments are placed with that
+  camera, so they never drift from the picture.
+- Chunks are built a few per frame, nearest and ahead first; the ground under the craft
+  is computed from the same grid and triangle split as the mesh, so collisions match what
+  is drawn. Each chunk keeps its trees and rocks apart, so the CPU leaves them out beyond
+  520 m.
+- The audio's engine hum is a one-second loop in which every part repeats a whole number
+  of times, so it loops without a click; `Voice::set_speed` bends its pitch with the speed.
 
 ## Resume here (next session)
 
-State on 2026-11-25: Phases 15 and 16 are done and committed locally (not pushed: the user
-asked not to push yet). Start this phase at step 2 (the engine change), following the
+State on 2026-11-25: Phases 15, 16 and 17 are done and committed locally (not pushed: the
+user asked not to push yet). This phase started at step 2 (the engine change), following the
 workflow in `AGENTS.md`: the plan is approved, so carry out each step with checks
 (`--all-features` and `--no-default-features`), focused commits, and present the result.
 After this phase comes Phase 18, the native window backend
