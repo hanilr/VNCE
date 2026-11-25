@@ -521,24 +521,39 @@ mod tests {
 
     #[test]
     fn precise_wait_ends_on_time_with_a_coarse_poll() {
-        // A poll that, like Windows, rounds every non-zero wait up to 16 ms steps.
-        let coarse_poll = |timeout: Duration| -> io::Result<bool> {
-            if !timeout.is_zero() {
-                let steps = timeout.as_micros().div_ceil(16_000);
-                let micros = u64::try_from(steps * 16_000).unwrap_or(u64::MAX);
-                std::thread::sleep(Duration::from_micros(micros));
-            }
-            Ok(false)
-        };
+        // A poll that, like Windows, rounds every non-zero wait up to 16 ms steps. The test
+        // checks what `precise_wait` asks for, not how long sleeping takes: CI machines
+        // (macOS in particular) can oversleep by many milliseconds.
         for millis in [0, 1, 5, 17, 40] {
             let timeout = Duration::from_millis(millis);
             let start = Instant::now();
+            let deadline = start + timeout;
+            let mut coarse_waits = Vec::new();
+            let coarse_poll = |wait: Duration| -> io::Result<bool> {
+                if !wait.is_zero() {
+                    coarse_waits.push((Instant::now(), wait));
+                    let steps = wait.as_micros().div_ceil(16_000);
+                    let micros = u64::try_from(steps * 16_000).unwrap_or(u64::MAX);
+                    std::thread::sleep(Duration::from_micros(micros));
+                }
+                Ok(false)
+            };
             assert!(!precise_wait(timeout, coarse_poll, std::thread::sleep).unwrap());
             let elapsed = start.elapsed();
             assert!(elapsed >= timeout, "{millis} ms: {elapsed:?}");
-            // The coarse poll alone would overshoot by up to 16 ms.
+            // A coarse wait, even rounded up to the next 16 ms step, never reaches past the
+            // deadline: only the short sleeps of the last 16 ms are left. (`at` is taken a
+            // moment after `precise_wait` computed the wait, hence the small margin.)
+            let margin = Duration::from_millis(5);
+            for (at, wait) in coarse_waits {
+                assert!(
+                    at + wait + COARSE_STEP <= deadline + margin,
+                    "{millis} ms: {wait:?}"
+                );
+            }
+            // Generous bound: only catches a wait that does not end.
             assert!(
-                elapsed < timeout + Duration::from_millis(12),
+                elapsed < timeout + Duration::from_secs(1),
                 "{millis} ms: {elapsed:?}"
             );
         }
