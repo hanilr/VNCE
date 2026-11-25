@@ -1,7 +1,7 @@
 # Plan: Phase 11 — Example game and tutorial
 
 **Date:** 2026-11-24
-**Status:** Approved; the game and the engine gaps are done, the tutorial is next
+**Status:** Done
 
 ## Goal
 
@@ -79,3 +79,36 @@ borrow is fixed too. Next: step 2, the tutorial.
 Step 2 is done: `docs/tutorial/` has an index and eight chapters, compiled as doc-tests
 through `crates/vnce/src/lib.rs` (chapter 7 only with the `audio` feature). Next: step 3,
 docs, changelog and closing the phase.
+
+## Implementation notes
+
+- Lantern came first, written only against the public API; everything it had to work
+  around became the list of gaps above, fixed in the second session one commit each.
+- `Rng` keeps Lantern's xorshift64* and seed mixing; `below` switched from a modulo to a
+  multiply-high (even spread, no division), so the same seed now gives different caves
+  than before, which does not matter since Lantern seeds from the time. `vnce-audio`
+  keeps its own small generator: it does not depend on `vnce-game`.
+- `Font`: the 5×7 glyphs were drawn for the engine, not copied from an existing font, and
+  checked by printing the table. Turkish capitals with marks above are one or two rows
+  shorter to fit the cell. Unknown characters draw as a box.
+- `SaveFile` needs no dependency: no serde, and the data folder is found from
+  `APPDATA`, `HOME` and `XDG_DATA_HOME` (only absolute paths are trusted). Lantern saves
+  when the settings or controls close, when a game ends and when the player quits.
+- Controls screen: the key is read from `Scene::event`; one update is skipped after a key
+  is bound so the same press does not also act. Esc cancels, so it cannot be bound there
+  (it can be in the save file).
+- Floor: four variants chosen per cell from an `Rng` seeded with the position, so the
+  pattern is stable across frames.
+- `Context` requests take `&self` through `Cell`s instead of returning a copy of the input
+  (cloning the `InputState` every update would allocate). `Context` is no longer `Sync`;
+  it was never shared between threads.
+- Let-chains (`if let … && let …`) were avoided: they need Rust 1.88 and the MSRV is 1.87.
+- The tutorial is compiled as doc-tests through `#[cfg(doctest)]` modules in
+  `crates/vnce/src/lib.rs` that include the Markdown files; chapter 7 only with `audio`.
+  A wrong camera offset in a first draft was caught this way and replaced by the measured
+  value.
+- The roadmap in `ARCHITECTURE.md` had lost its Phase 9 entry in an earlier docs commit;
+  it was restored.
+- Not seen on a screen in the second session (no interactive terminal): the pixel title,
+  the heads-up display, the controls screen and the new floor. They build and their logic
+  is covered by the engine tests; a look in a real terminal is still useful.

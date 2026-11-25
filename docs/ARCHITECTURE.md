@@ -25,10 +25,10 @@ The engine is **cross-platform** and targets:
 | `vnce-core`    | `vnce_core`    | Geometry, color, style, cell and buffer types.                       | Phase 1    |
 | `vnce-term`    | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images.  | Phase 1, 4 |
 | `vnce-runtime` | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.       | Phase 2    |
-| `vnce-raster`  | `vnce_raster`  | Pixel canvas, CPU rasterizer, pixel-to-cell modes.                   | Phase 3    |
+| `vnce-raster`  | `vnce_raster`  | Pixel canvas, CPU rasterizer, bitmap fonts, pixel-to-cell modes.     | Phase 3    |
 | `vnce-gpu`     | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.       | Phase 5    |
 | `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.          | Phase 6    |
-| `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers. | Phase 8    |
+| `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers, random numbers, save files. | Phase 8, 11 |
 | `vnce-audio`   | `vnce_audio`   | Mixer, WAV / OGG decoding, sound synthesis, playback with `cpal`.    | Phase 9    |
 | `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.     | Phase 1    |
 
@@ -125,6 +125,9 @@ The block tables are generated from the Unicode character database by
 Own rasterizer in `vnce_raster::Canvas`: Bresenham and anti-aliased (Wu) lines, rectangles,
 circles, triangles with a top-left fill rule and per-vertex gradients, sprite blitting,
 `Replace` / `Alpha` / `Add` / `Multiply` blending, clipping and PNG loading.
+`Font` draws fixed-width bitmap text through the same clipping and blending: a built-in
+5×7 font (printable ASCII and the Turkish letters, designed for the engine), custom fonts
+from text art, integer scaling for titles.
 Optional parallelism may be added later.
 
 ### GPU renderer
@@ -172,6 +175,11 @@ ECS):
   interpolation with `ctx.alpha()`, pixel-rounded offsets).
 - `SceneStack` runs `Scene`s as a `Game`: push / pop / switch / quit transitions, overlays
   drawn over the scenes below, data shared by all scenes. `Timer` and easing curves.
+- `Rng`: a seeded xorshift64* generator (no dependency) for level generation; `below`
+  uses a multiply-high instead of a modulo for an even spread.
+- `SaveFile`: plain-text `key = value` files in the user's data folder (`data_dir`), typed
+  access, key bindings stored by name (`KeyCode` and `Binding` implement `Display` and
+  `FromStr`), writes through a temporary file; missing or broken files start empty.
 
 ### Audio
 
@@ -205,6 +213,9 @@ A game loop with a fixed timestep, frame pacing and input dispatch:
 - `InputState` tracks held keys. Terminals that report key releases (Windows, or the
   kitty keyboard protocol) give exact releases; elsewhere a timeout is used.
 - A `Driver` trait (clock + events) makes runs deterministic in tests (`ScriptedDriver`).
+- The methods of `Context` that request a change (`quit`, `set_paused`, `set_fps_limit`,
+  `set_update_rate`, `set_graphics_mode`) take `&self` (the values live in `Cell`s), so
+  they can be called while the input from `ctx.input()` is borrowed.
 
 ### Widgets
 
@@ -246,9 +257,11 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-7-ci-and-release.md`](plans/2026-11-24-phase-7-ci-and-release.md).
 8. **Phase 8:** Game core (`vnce-game`) — see
    [`plans/2026-11-24-phase-8-game-core.md`](plans/2026-11-24-phase-8-game-core.md).
-. **Phase 10:** Graphics protocols in tmux, and their speed — see
+9. **Phase 9:** Audio (`vnce-audio`) — see
+   [`plans/2026-11-24-phase-9-audio.md`](plans/2026-11-24-phase-9-audio.md).
+10. **Phase 10:** Graphics protocols in tmux, and their speed — see
    [`plans/2026-11-24-phase-10-protocol-performance.md`](plans/2026-11-24-phase-10-protocol-performance.md).
-11. **Phase 11:** Example game and tutorial (in progress) — see
+11. **Phase 11:** Example game (Lantern), engine gaps it showed, and the tutorial — see
    [`plans/2026-11-24-phase-11-example-game.md`](plans/2026-11-24-phase-11-example-game.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

@@ -5,9 +5,9 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 9: core types, terminal layer, game loop, pixel
-> graphics, terminal graphics protocols, GPU rendering, widgets, game building blocks and
-> audio). The API is not stable yet.
+> **Status:** early development (Phase 11: core types, terminal layer, game loop, pixel
+> graphics, terminal graphics protocols, GPU rendering, widgets, game building blocks,
+> audio, an example game and a tutorial). The API is not stable yet.
 
 ## Usage
 
@@ -35,7 +35,8 @@ For games, implement `vnce_runtime::Game` and call `vnce_runtime::run`: updates 
 rate, frames at a configurable limit, and `ctx.input()` tells which keys are held down.
 
 For pixel graphics, draw on a `vnce_raster::Canvas` (lines, shapes, triangles, sprites, PNG
-images) and convert it into cells with `canvas.render(buffer, area, mode, &options)`.
+images) and convert it into cells with `canvas.render(buffer, area, mode, &options)`. Text
+goes into pixels with `canvas.text(Font::builtin(), x, y, "SCORE", color)`.
 `PixelMode::detect` picks a mode that works on the current terminal.
 
 For real pixels, call `frame.draw_image(area, &canvas)`: it uses the Kitty, Sixel or iTerm2
@@ -60,7 +61,8 @@ graphics.
 For games, `vnce_game` (feature `game`, on by default) has key bindings (`ActionMap`),
 collision (`Aabb`, `move_and_collide` through solid tiles, `SpatialGrid`), sprite sheets
 and animation, tile maps loaded from text, a following `Camera`, scenes (`SceneStack`:
-title, play, pause …) and timers.
+title, play, pause …), timers, a seeded random generator (`Rng`) and save files
+(`SaveFile`) for best scores, settings and key bindings.
 
 For sound, enable the `audio` feature: `vnce_audio` mixes sounds (volume, pan, speed,
 looping, fades, music and effects groups), decodes WAV (and OGG Vorbis with the `ogg`
