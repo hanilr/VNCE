@@ -295,5 +295,9 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-13-github.md`](plans/2026-11-25-phase-13-github.md).
 14. **Phase 14:** The showcase game Relay — see
    [`plans/2026-11-25-phase-14-showcase.md`](plans/2026-11-25-phase-14-showcase.md).
+15. **Phase 15:** Real-pixel speed — see
+   [`plans/2026-11-25-phase-15-real-pixel-speed.md`](plans/2026-11-25-phase-15-real-pixel-speed.md).
+16. **Phase 16:** The isometric 2.5D showcase Isle — see
+   [`plans/2026-11-25-phase-16-isometric-demo.md`](plans/2026-11-25-phase-16-isometric-demo.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

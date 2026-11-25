@@ -72,7 +72,8 @@ impl Minimap {
                 };
                 let lift = 0.8 + f32::from(level) * 0.07;
                 let mut color = crate::iso::scale(color, lift);
-                if matches!(island.prop[i], Some(Prop::Tree | Prop::Pine | Prop::Palm)) {
+                // Tall props (trees, the beacon) darken their tile, like a forest on a map.
+                if island.prop[i].is_some_and(Prop::is_tall) {
                     color = crate::iso::scale(color, 0.7);
                 }
                 let (mx, my) = locate(quarter, x as f32 + 0.5, y as f32 + 0.5);

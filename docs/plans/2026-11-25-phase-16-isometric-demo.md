@@ -1,7 +1,7 @@
 # Plan: Phase 16 — Isometric demo "Isle"
 
 **Date:** 2026-11-25
-**Status:** Approved (the user chose an isometric game over a raycaster and approved the
+**Status:** Done (the user chose an isometric game over a raycaster and approved the
 whole plan of Phases 15–17 on 2026-11-25; on starting the phase the user asked for a
 showcase that covers everything and approved the wider scope below, with an optional GPU
 effect)
@@ -91,3 +91,42 @@ None.
   picture in world space and placed by the CPU, so the camera position needs no uniform.
 - Engine gaps found while building it are planned and approved separately, as with
   Lantern.
+
+## Results
+
+`cargo run --release --example isle --features gpu -- --bench` (200 × 60 cells, 600
+frames at dusk in the rain, walking a route with two camera turns and a zoom; development
+machine with an RTX 5070 Laptop GPU):
+
+| Display method | Per frame | Of it in `render` | Output per frame |
+| -------------- | --------- | ----------------- | ---------------- |
+| Half blocks    | 0.97 ms   | 0.65 ms           | 99 KB            |
+| Sextants       | 2.45 ms   | 2.11 ms           | 107 KB           |
+| Braille        | 2.40 ms   | 2.06 ms           | 106 KB           |
+| Kitty          | 10.2 ms   | 2.12 ms           | 316 KB           |
+| Sixel          | 17.8 ms   | 2.28 ms           | 300 KB           |
+
+The target (under 3 ms in half blocks) is met. A still frame from the terrain cache takes
+0.2 ms (400 × 116 world pixels) to 0.7 ms (666 × 386); while the camera turns, every tile
+is drawn at the current angle in 1 to 3.4 ms. With a graphics protocol most of the time is
+sending: rain, the animated ocean and the light change most pixels every frame.
+
+## Implementation notes
+
+- Tile tops are drawn pixel by pixel through the inverse projection (texture, a soft
+  border, stair steps and the shadows of nearby props), so they work at any camera angle
+  and never leave seams; cliff sides are triangles that reach a pixel into the top.
+- A tile drawn again over an actor (`Layer::Above`) produces exactly the pixels of the
+  cache: only opaque parts, and only the sides and tops that rise above the actor, so a
+  flat tile in front never cuts off feet.
+- The x-ray keeps the player's pixels right after drawing them and compares them after
+  everything else: the pixels that changed were covered.
+- `ShaderQuad` passes only the time, so the ocean is a seamless 128 × 64 picture placed by
+  the CPU under the camera; the GPU and CPU versions use the same shades.
+- A `Transition::Switch` replaces only the top scene, so menus over another scene leave a
+  `Request` in the shared data and pop; the scene below switches. (Relay's pause menu
+  switches to the title from the top, which leaves its game scene below; noted for a
+  separate fix.)
+- Stairs are only placed where their sides are open (no higher neighbor beside them);
+  otherwise the side between the stair and the higher tile would show a gap.
+

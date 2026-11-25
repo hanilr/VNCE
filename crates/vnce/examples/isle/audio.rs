@@ -18,6 +18,11 @@ pub enum Sfx {
 /// Which tune plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mood {
+    /// No tune (only the sound version starts with it).
+    #[cfg_attr(
+        not(feature = "audio"),
+        allow(dead_code, reason = "the silent version plays nothing")
+    )]
     Off,
     Day,
     Night,

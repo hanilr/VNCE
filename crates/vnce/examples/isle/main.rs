@@ -27,7 +27,6 @@
 )]
 // Geometry reads best with its usual names (x, y, u, v, h).
 #![allow(clippy::many_single_char_names, reason = "geometry names")]
-#![allow(dead_code, reason = "the game is built up step by step")]
 
 mod art;
 mod audio;

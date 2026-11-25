@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact scaling, synthesized music and a pad puzzle, and the widgets with Unicode text;
   light sprites are added into a layer that multiplies the scene. `--bench` measures it
   without a screen; a smoke test plays it.
+- `isle` example: the 2.5D showcase. An isometric island generated from a six-letter code,
+  with height levels, stairs, cliffs, forests and beaches; collect seven light crystals
+  and light the beacon before night falls. The camera turns in eased quarter turns and
+  zooms; the terrain is cached per direction and only tiles in front of moving things are
+  drawn again, so trees and cliffs hide what is behind them, with an x-ray outline of the
+  hidden player. Click a tile to walk there (A*), with a path preview. Crabs and wisps,
+  rain with lightning, cloud shadows, fireflies, foam, the lantern and other lights in a
+  multiplied light layer, a minimap, gauges, menus, rebindable keys and a save file; an
+  ocean from a GPU shader (`gpu`) or the CPU; sound with `audio`. `--bench` and a smoke
+  test that goes through the menus.
 - `perf` example: full-screen Kitty and Sixel image scenarios (a still picture and a
   moving sprite), timing `draw_image` and the flush separately.
 - Initial Cargo workspace with the `vnce` crate (imported as `vnce`).
