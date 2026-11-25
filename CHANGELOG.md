@@ -128,6 +128,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `vnce_game::Rng`: a seeded random generator (xorshift64*) with `below`, `range`, `unit`,
   `chance`, `pick`, `shuffle` and saving / restoring the state; the `lantern` and `stars`
   examples use it instead of their own copies (`stars` now needs the `game` feature).
+- `vnce_raster::Font`: bitmap text on a canvas (`Canvas::text`, `Canvas::text_scaled`) with
+  a built-in 5×7 font (printable ASCII and the Turkish letters), custom fonts from text
+  art and `Font::measure`; `lantern` draws its title and a heads-up display with it.
 
 ### Changed
 

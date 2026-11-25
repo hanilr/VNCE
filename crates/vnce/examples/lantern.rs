@@ -29,7 +29,7 @@ use vnce::vnce_game::{
     Aabb, ActionMap, Animation, Animator, Camera, Playback, Rng, Scene, SceneStack, SpatialGrid,
     SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
 };
-use vnce::vnce_raster::{BlitOptions, Canvas, Rgba};
+use vnce::vnce_raster::{BlitOptions, Canvas, Font, Rgba};
 use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
 use vnce::vnce_term::{Frame, GraphicsMode, KeyCode};
 use vnce::vnce_ui::{
@@ -558,6 +558,38 @@ fn apply_light(canvas: &mut Canvas, light: (f32, f32), radius: f32, flicker: f32
     }
 }
 
+/// Pixel text with a dark shadow, so it stays readable on light and dark ground.
+fn shadow_text(canvas: &mut Canvas, x: i32, y: i32, text: &str, color: Rgba, scale: u32) {
+    let font = Font::builtin();
+    let shadow = Rgba::rgb(12, 10, 16);
+    let step = scale as i32;
+    canvas.text_scaled(font, x + step, y + step, text, shadow, scale);
+    canvas.text_scaled(font, x, y, text, color, scale);
+}
+
+/// The heads-up display drawn into the world view: depth and score on the left, lives as
+/// hearts and the gem count on the right.
+fn draw_hud(canvas: &mut Canvas, level: u32, score: u32, lives: u32, goal: &str) {
+    let gold = Rgba::rgb(255, 210, 110);
+    shadow_text(canvas, 2, 2, &format!("DEPTH {level}"), gold, 1);
+    shadow_text(canvas, 2, 11, &format!("SCORE {score}"), Rgba::WHITE, 1);
+    let heart = Canvas::from_art(
+        &[".#.#.", "#####", "#####", ".###.", "..#.."],
+        &[('#', Rgba::rgb(235, 70, 80))],
+    );
+    let right = canvas.width() as i32 - 2;
+    for life in 0..lives as i32 {
+        canvas.blit(
+            &heart,
+            right - 6 * (life + 1) + 1,
+            3,
+            BlitOptions::default(),
+        );
+    }
+    let (goal_width, _) = Font::builtin().measure(goal);
+    shadow_text(canvas, right - goal_width as i32, 11, goal, gold, 1);
+}
+
 // ---------------------------------------------------------------------------------------
 // Scenes
 // ---------------------------------------------------------------------------------------
@@ -633,6 +665,21 @@ impl Scene<Shared> for Title {
                 light,
                 height as f32 * 0.6,
                 (self.time * 9.0).sin(),
+            );
+            // The title in big pixel letters, above the menu.
+            let (text_width, text_height) = Font::builtin().measure("LANTERN");
+            let scale = (width * 3 / 5 / text_width)
+                .min(height / 5 / text_height)
+                .max(1);
+            let x = (width - (text_width * scale).min(width)) / 2;
+            let y = height / 12;
+            shadow_text(
+                &mut canvas,
+                x as i32,
+                y as i32,
+                "LANTERN",
+                Rgba::rgb(255, 210, 110),
+                scale,
             );
             present(frame, area, &canvas);
         }
@@ -1128,6 +1175,13 @@ impl Scene<Shared> for Play {
                 self.light_radius(),
                 (self.time * 11.0).sin() * (self.time * 7.0).cos(),
             );
+            let found = self.gems_total - self.gems.len();
+            let goal = if self.gems.is_empty() {
+                "EXIT!".to_owned()
+            } else {
+                format!("GEMS {found}/{}", self.gems_total)
+            };
+            draw_hud(&mut canvas, self.level, self.score, self.lives, &goal);
             present(frame, area, &canvas);
         }
         let found = self.gems_total - self.gems.len();
