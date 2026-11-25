@@ -324,5 +324,11 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-17-3d-flight-demo.md`](plans/2026-11-25-phase-17-3d-flight-demo.md).
 18. **Phase 18:** The native window `vnce-window` — see
    [`plans/2026-11-25-phase-18-window-backend.md`](plans/2026-11-25-phase-18-window-backend.md).
+19. **Phase 19 (planned):** Game toolkit: paths, particles, easing, math and more
+   widgets — see [`plans/2026-11-25-phase-19-game-toolkit.md`](plans/2026-11-25-phase-19-game-toolkit.md).
+20. **Phase 20 (planned):** Gamepads and a more complete window — see
+   [`plans/2026-11-25-phase-20-gamepads-and-window.md`](plans/2026-11-25-phase-20-gamepads-and-window.md).
+21. **Phase 21 (planned):** Documentation, publishing and a wiki front page — see
+   [`plans/2026-11-25-phase-21-docs-and-publishing.md`](plans/2026-11-25-phase-21-docs-and-publishing.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.
