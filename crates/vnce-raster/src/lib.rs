@@ -31,4 +31,4 @@ pub use color::{BlendMode, Rgba};
 pub use font::Font;
 #[cfg(feature = "png")]
 pub use image::ImageError;
-pub use mode::{ParsePixelModeError, PixelMode, Quality, RenderOptions};
+pub use mode::{ParsePixelModeError, PixelMode, Quality, RenderOptions, block_pattern};

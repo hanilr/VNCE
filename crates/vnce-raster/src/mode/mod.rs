@@ -167,6 +167,26 @@ impl PixelMode {
     }
 }
 
+/// The grid of a block symbol used by the pixel modes: its columns, rows and filled
+/// blocks (bit `row * columns + column`), for the quadrant (2×2), sextant (2×3) and
+/// octant (2×4) characters. A renderer that draws these symbols itself (instead of a
+/// font) gets exactly the pixels the mode meant. Returns the finest grid for symbols
+/// shared by several modes; `None` for other symbols.
+#[must_use]
+pub fn block_pattern(symbol: char) -> Option<(u8, u8, u8)> {
+    if symbol == ' ' {
+        return None;
+    }
+    let find = |table: &[char]| table.iter().position(|&c| c == symbol);
+    if let Some(bits) = find(&tables::OCTANT) {
+        return Some((2, 4, u8::try_from(bits).ok()?));
+    }
+    if let Some(bits) = find(&tables::SEXTANT) {
+        return Some((2, 3, u8::try_from(bits).ok()?));
+    }
+    find(&tables::QUADRANT).and_then(|bits| Some((2, 2, u8::try_from(bits).ok()?)))
+}
+
 impl fmt::Display for PixelMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
@@ -462,6 +482,9 @@ mod tests {
             }
         }
         // Spot checks against well-known characters.
+        assert_eq!(block_pattern('▌'), Some((2, 4, 0b0101_0101)));
+        assert_eq!(block_pattern('\u{1fb00}'), Some((2, 3, 1)));
+        assert_eq!(block_pattern('a'), None);
         assert_eq!(tables::QUADRANT[0b0101], '▌');
         assert_eq!(tables::QUADRANT[0b1001], '▚');
         assert_eq!(tables::SEXTANT[0b01_0101], '▌');

@@ -30,11 +30,13 @@ vnce-raster = { path = "crates/vnce-raster", version = "0.1.0", default-features
 vnce-runtime = { path = "crates/vnce-runtime", version = "0.1.0" }
 vnce-term = { path = "crates/vnce-term", version = "0.1.0" }
 vnce-ui = { path = "crates/vnce-ui", version = "0.1.0" }
+vnce-window = { path = "crates/vnce-window", version = "0.1.0" }
 
 # External crates.
 bytemuck = { version = "1.25", features = ["derive"] }
 cpal = { version = "0.18", default-features = false }
 crossterm = { version = "0.29", default-features = false, features = ["bracketed-paste", "events", "windows"] }
+fontdue = "0.9"
 lewton = "0.10"
 miniz_oxide = "0.8"
 png = "0.18"
@@ -43,5 +45,7 @@ rustix = { version = "1.1", default-features = false, features = ["std", "event"
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading"] }
+# Windows, events and the window's surface (`vnce-window`).
+winit = "0.30"
 # Web backends are not needed in a terminal.
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "gles", "vulkan", "wgsl"] }

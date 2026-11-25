@@ -1,0 +1,33 @@
+[package]
+name = "vnce-window"
+description = "A native window for the Variation CLI Engine: the same games in their own window, cells and images drawn directly on the GPU."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/vnce-window"
+readme = "../../README.md"
+keywords = ["terminal", "window", "gpu", "game", "winit"]
+categories = ["command-line-interface", "game-development", "gui", "rendering"]
+# The bundled JetBrains Mono font has its own license (SIL Open Font License 1.1, in
+# `fonts/OFL.txt`).
+include = ["src/**", "fonts/**", "tests/**", "Cargo.toml", "LICENSE", "NOTICE"]
+
+[lib]
+name = "vnce_window"
+
+[lints]
+workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+fontdue.workspace = true
+pollster.workspace = true
+vnce-core.workspace = true
+vnce-gpu.workspace = true
+vnce-raster = { workspace = true, features = ["png"] }
+vnce-runtime.workspace = true
+vnce-term.workspace = true
+winit.workspace = true

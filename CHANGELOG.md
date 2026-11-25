@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vnce-window` (`vnce_window`): games in a native window. `winit` for the window and
+  its events (pumped from the engine's own loop), `wgpu` to draw: every cell in one
+  instanced draw from a glyph atlas of the bundled JetBrains Mono (SIL Open Font
+  License 1.1, with fake bold and italic); block elements, quadrants, sextants, octants,
+  braille and box drawing drawn by code, so pixel modes and borders line up exactly.
+  Images are textures uploaded only when they change. Keys with presses and releases,
+  the mouse in cells, the close button, resizing and scale factors; F11 / Alt+Enter for
+  fullscreen; title, size, icon, font size and vsync options; `VNCE_WINDOW_SCREENSHOT`
+  saves a frame as PNG. `vnce_window::run` runs a game in a window; the `hello` example
+  tours it.
+- `vnce_raster::block_pattern` gives the grid of a quadrant, sextant or octant symbol,
+  for renderers that draw them themselves.
 - Frames for native windows (`vnce_term`): `Backend::present` receives a finished frame
   (`FrameView`: the cell buffer and the images in drawing order, each marked when it
   changed) and the terminal then writes no escape sequences. `GraphicsMode::Native`
