@@ -199,7 +199,10 @@ impl Canvas {
     /// Pixels exactly on an edge follow the top-left rule, so triangles that share an edge
     /// never draw the same pixel twice (no seams, no double blending).
     pub fn fill_triangle(&mut self, a: (f32, f32), b: (f32, f32), c: (f32, f32), color: Rgba) {
-        self.rasterize_triangle([a, b, c], |_| color);
+        self.rasterize_triangle(
+            [a, b, c],
+            &TriangleFill::<fn([f64; 3]) -> Rgba>::Solid(color),
+        );
     }
 
     /// Fills a triangle whose color (including alpha) is interpolated between the colors
@@ -211,26 +214,34 @@ impl Canvas {
         (c, color_c): ((f32, f32), Rgba),
     ) {
         let colors = [color_a, color_b, color_c];
-        self.rasterize_triangle([a, b, c], |weights| {
-            let channel = |get: fn(Rgba) -> u8| {
-                #[allow(clippy::cast_possible_truncation, reason = "0..=255 fits in f32")]
-                let value = (f64::from(get(colors[0])) * weights[0]
-                    + f64::from(get(colors[1])) * weights[1]
-                    + f64::from(get(colors[2])) * weights[2]) as f32;
-                to_u8(value)
-            };
-            Rgba::new(
-                channel(|c| c.r),
-                channel(|c| c.g),
-                channel(|c| c.b),
-                channel(|c| c.a),
-            )
-        });
+        self.rasterize_triangle(
+            [a, b, c],
+            &TriangleFill::Shaded(|weights: [f64; 3]| {
+                let channel = |get: fn(Rgba) -> u8| {
+                    #[allow(clippy::cast_possible_truncation, reason = "0..=255 fits in f32")]
+                    let value = (f64::from(get(colors[0])) * weights[0]
+                        + f64::from(get(colors[1])) * weights[1]
+                        + f64::from(get(colors[2])) * weights[2])
+                        as f32;
+                    to_u8(value)
+                };
+                Rgba::new(
+                    channel(|c| c.r),
+                    channel(|c| c.g),
+                    channel(|c| c.b),
+                    channel(|c| c.a),
+                )
+            }),
+        );
     }
 
-    /// Rasterizes a triangle with edge functions, calling `shade` with the barycentric
-    /// weights of every covered pixel.
-    fn rasterize_triangle(&mut self, vertices: [(f32, f32); 3], shade: impl Fn([f64; 3]) -> Rgba) {
+    /// Rasterizes a triangle with edge functions. A [`TriangleFill::Shaded`] triangle calls
+    /// its shader with the barycentric weights of every covered pixel.
+    fn rasterize_triangle<F: Fn([f64; 3]) -> Rgba>(
+        &mut self,
+        vertices: [(f32, f32); 3],
+        fill: &TriangleFill<F>,
+    ) {
         let bounds = self.bounds();
         if bounds.is_empty() || !vertices.iter().all(|v| v.0.is_finite() && v.1.is_finite()) {
             return;
@@ -266,23 +277,115 @@ impl Canvas {
 
         let edges = [(v[1], v[2]), (v[2], v[0]), (v[0], v[1])];
         let top_left = edges.map(|(from, to)| is_top_left(from, to));
+        let weights_at = |x: i64, y: i64| {
+            let p = (to_f64(x), to_f64(y));
+            edges.map(|(from, to)| edge(from, to, p))
+        };
+        let covered = |x: i64, y: i64| {
+            let w = weights_at(x, y);
+            (0..3).all(|i| w[i] > 0.0 || (w[i] == 0.0 && top_left[i]))
+        };
         for y in y_start..=y_end {
-            for x in x_start..=x_end {
-                let p = (to_f64(x), to_f64(y));
-                let w = edges.map(|(from, to)| edge(from, to, p));
-                let inside = (0..3).all(|i| w[i] > 0.0 || (w[i] == 0.0 && top_left[i]));
-                if inside {
-                    // Weights in the original vertex order.
-                    let mut weights = [0.0; 3];
-                    for i in 0..3 {
-                        weights[order[i]] = w[i] / area;
+            let Some((left, right)) = covered_run(&edges, y, x_start, x_end, |x| covered(x, y))
+            else {
+                continue;
+            };
+            match fill {
+                TriangleFill::Solid(color) => self.span(bounds, left, right, y, *color),
+                TriangleFill::Shaded(shade) => {
+                    for x in left..=right {
+                        let w = weights_at(x, y);
+                        // Weights in the original vertex order.
+                        let mut weights = [0.0; 3];
+                        for i in 0..3 {
+                            weights[order[i]] = w[i] / area;
+                        }
+                        let color = shade(weights);
+                        self.put(x, y, color);
                     }
-                    let color = shade(weights);
-                    self.put(x, y, color);
                 }
             }
         }
     }
+}
+
+/// The covered pixels `left..=right` of row `y` of a triangle, or `None` if none is
+/// covered. `covered` is the exact pixel test.
+///
+/// On a row, every edge function is monotonic in `x` even in floating point (the
+/// subtraction and the product round monotonically), so the pixels inside each edge form
+/// a half-line and the covered pixels form one run. The ends of the run are estimated
+/// from where each edge crosses the row, then settled with the exact test, so only a few
+/// pixels per row are tested and the result is exactly the pixels a full scan would find.
+fn covered_run(
+    edges: &[Edge; 3],
+    y: i64,
+    x_start: i64,
+    x_end: i64,
+    covered: impl Fn(i64) -> bool,
+) -> Option<(i64, i64)> {
+    if x_start > x_end {
+        return None;
+    }
+    // Where each edge function crosses zero on this row: covered pixels lie between the
+    // largest lower bound and the smallest upper bound.
+    let (mut lower, mut upper) = (f64::NEG_INFINITY, f64::INFINITY);
+    for &(from, to) in edges {
+        let slope = to.1 - from.1;
+        let constant = (to.0 - from.0) * (to_f64(y) - from.1);
+        if slope > 0.0 {
+            upper = upper.min(from.0 + constant / slope);
+        } else if slope < 0.0 {
+            lower = lower.max(from.0 + constant / slope);
+        }
+    }
+    let guess = |value: f64, otherwise: i64| {
+        if value.is_finite() {
+            to_i64(value)
+        } else {
+            otherwise
+        }
+    };
+
+    // Left end: walk from the estimate to the first covered pixel. If the estimate was
+    // right of the run, nothing is found and the row is scanned from its start.
+    let mut left = guess(lower.ceil(), x_start).clamp(x_start, x_end + 1);
+    while left > x_start && covered(left - 1) {
+        left -= 1;
+    }
+    while left <= x_end && !covered(left) {
+        left += 1;
+    }
+    if left > x_end {
+        left = x_start;
+        while left <= x_end && !covered(left) {
+            left += 1;
+        }
+        if left > x_end {
+            return None;
+        }
+    }
+
+    // Right end: `left` is covered, so walking left always stops.
+    let mut right = guess(upper.floor(), x_end).clamp(left, x_end);
+    while right < x_end && covered(right + 1) {
+        right += 1;
+    }
+    while !covered(right) {
+        right -= 1;
+    }
+    Some((left, right))
+}
+
+/// A triangle edge: from one corner to the next.
+type Edge = ((f64, f64), (f64, f64));
+
+/// How a triangle is filled.
+enum TriangleFill<F> {
+    /// One color: covered pixels are drawn in horizontal runs.
+    Solid(Rgba),
+    /// A color for every pixel from its barycentric weights.
+    Shaded(F),
 }
 
 /// Edge function: positive when `p` is on the inner side of the edge `a -> b` for
@@ -408,6 +511,105 @@ fn to_i64(value: f64) -> i64 {
 mod tests {
     use super::*;
     use crate::color::BlendMode;
+
+    /// Fills a triangle by testing every pixel of the canvas, the way `rasterize_triangle`
+    /// worked before it searched for the ends of each row.
+    fn triangle_reference(canvas: &mut Canvas, vertices: [(f32, f32); 3], colors: [Rgba; 3]) {
+        let mut v = vertices.map(|(x, y)| (f64::from(x), f64::from(y)));
+        let mut order = [0, 1, 2];
+        let mut area = edge(v[0], v[1], v[2]);
+        if area < 0.0 {
+            v.swap(1, 2);
+            order.swap(1, 2);
+            area = -area;
+        }
+        if area == 0.0 {
+            return;
+        }
+        let edges = [(v[1], v[2]), (v[2], v[0]), (v[0], v[1])];
+        let top_left = edges.map(|(from, to)| is_top_left(from, to));
+        for y in 0..i64::from(canvas.height()) {
+            for x in 0..i64::from(canvas.width()) {
+                let p = (to_f64(x), to_f64(y));
+                let w = edges.map(|(from, to)| edge(from, to, p));
+                if (0..3).all(|i| w[i] > 0.0 || (w[i] == 0.0 && top_left[i])) {
+                    let mut weights = [0.0; 3];
+                    for i in 0..3 {
+                        weights[order[i]] = w[i] / area;
+                    }
+                    let channel = |get: fn(Rgba) -> u8| {
+                        #[allow(clippy::cast_possible_truncation, reason = "0..=255")]
+                        let value = (f64::from(get(colors[0])) * weights[0]
+                            + f64::from(get(colors[1])) * weights[1]
+                            + f64::from(get(colors[2])) * weights[2])
+                            as f32;
+                        to_u8(value)
+                    };
+                    let color = Rgba::new(
+                        channel(|c| c.r),
+                        channel(|c| c.g),
+                        channel(|c| c.b),
+                        channel(|c| c.a),
+                    );
+                    canvas.pixel(
+                        i32::try_from(x).unwrap_or(0),
+                        i32::try_from(y).unwrap_or(0),
+                        color,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn triangle_rows_match_a_full_scan() {
+        // A small xorshift generator. Every third triangle has its corners on a quarter-pixel
+        // grid, so its edges pass exactly through pixel centers, where the top-left rule
+        // decides.
+        let mut state = 0x7a1a_9e1e_u64;
+        let mut next = move |n: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % n
+        };
+        let colors = [
+            Rgba::new(255, 0, 0, 120),
+            Rgba::new(0, 255, 0, 200),
+            Rgba::new(0, 0, 255, 60),
+        ];
+        for round in 0..3000 {
+            let grid = round % 3 == 0;
+            let mut point = || {
+                #[allow(clippy::cast_precision_loss, reason = "small numbers")]
+                let (x, y) = if grid {
+                    (next(200) as f32 / 4.0 - 6.0, next(200) as f32 / 4.0 - 6.0)
+                } else {
+                    (
+                        next(50_000) as f32 / 1000.0 - 6.0,
+                        next(50_000) as f32 / 1000.0 - 6.0,
+                    )
+                };
+                (x, y)
+            };
+            let vertices = [point(), point(), point()];
+            let mut canvas = Canvas::new(32, 28);
+            canvas.set_blend_mode(BlendMode::Alpha);
+            let mut expected = canvas.clone();
+            if round % 2 == 0 {
+                canvas.fill_triangle(vertices[0], vertices[1], vertices[2], colors[0]);
+                triangle_reference(&mut expected, vertices, [colors[0]; 3]);
+            } else {
+                canvas.fill_triangle_gradient(
+                    (vertices[0], colors[0]),
+                    (vertices[1], colors[1]),
+                    (vertices[2], colors[2]),
+                );
+                triangle_reference(&mut expected, vertices, colors);
+            }
+            assert_eq!(canvas.pixels(), expected.pixels(), "{vertices:?}");
+        }
+    }
 
     const W: Rgba = Rgba::WHITE;
 
