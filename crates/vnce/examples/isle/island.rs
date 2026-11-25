@@ -13,6 +13,36 @@ pub const MAX_LEVEL: u8 = 5;
 /// Light crystals to collect.
 pub const CRYSTALS: usize = 7;
 
+/// Letters of island codes: no I, O, 0 or 1, which are easily mixed up.
+pub const CODE_LETTERS: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+/// Letters in an island code.
+pub const CODE_LENGTH: usize = 6;
+/// How many islands there are: every seed below this has a code.
+pub const CODES: u64 = 32_u64.pow(CODE_LENGTH as u32);
+
+/// The code of the island made from `seed` (seeds wrap around at [`CODES`]).
+pub fn code(seed: u64) -> String {
+    let letters: Vec<char> = CODE_LETTERS.chars().collect();
+    let mut value = seed % CODES;
+    let mut code = vec![' '; CODE_LENGTH];
+    for slot in code.iter_mut().rev() {
+        *slot = letters[(value % 32) as usize];
+        value /= 32;
+    }
+    code.into_iter().collect()
+}
+
+/// The seed of an island code (letters in any case), or `None` if it is not a code.
+pub fn parse_code(text: &str) -> Option<u64> {
+    let text = text.trim().to_ascii_uppercase();
+    if text.chars().count() != CODE_LENGTH {
+        return None;
+    }
+    text.chars().try_fold(0_u64, |value, c| {
+        CODE_LETTERS.find(c).map(|digit| value * 32 + digit as u64)
+    })
+}
+
 /// A direction on the tile grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dir {
@@ -589,6 +619,19 @@ mod tests {
                 .any(|d| neighbor(island.beacon, d.step()).is_some_and(|n| seen[index(n.0, n.1)]));
             assert!(beside, "seed {seed}");
         }
+    }
+
+    #[test]
+    fn island_codes_round_trip() {
+        for seed in [0, 1, 31, 32, 123_456, CODES - 1] {
+            let text = code(seed);
+            assert_eq!(text.len(), CODE_LENGTH);
+            assert_eq!(parse_code(&text), Some(seed));
+            assert_eq!(parse_code(&text.to_lowercase()), Some(seed));
+        }
+        assert_eq!(code(CODES + 5), code(5));
+        assert_eq!(parse_code("ABCDE"), None);
+        assert_eq!(parse_code("ABCDE0"), None, "0 is not a code letter");
     }
 
     #[test]

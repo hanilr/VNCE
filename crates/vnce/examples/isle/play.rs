@@ -24,9 +24,10 @@ use crate::iso::{
 };
 use crate::life::{self, Crab, Wisp};
 use crate::minimap::{self, Minimap};
+use crate::scenes::{End, Pause, Title};
 use crate::sky::{self, Clouds, Fireflies, Lights, NIGHT, Spark, Weather};
 use crate::visuals::{OCEAN_HEIGHT, OCEAN_WIDTH};
-use crate::{ACCENT, Action, Shared, ZOOM_ROWS, help_line, present, status_line, view};
+use crate::{ACCENT, Action, Request, Shared, ZOOM_ROWS, help_line, show, status_line, view};
 
 /// Walking speed in tiles per second.
 const SPEED: f32 = 3.4;
@@ -252,6 +253,16 @@ impl Play {
             rng,
             island,
         }
+    }
+
+    /// The bench's game: at dusk, in the rain, so light and weather are part of every
+    /// frame.
+    pub fn bench(seed: u64) -> Self {
+        let mut play = Self::new(seed);
+        play.clock = NIGHT * 0.7;
+        play.weather.start_shower();
+        play.weather.rain = 1.0;
+        play
     }
 
     /// How far night has fallen (0 to 1).
@@ -536,9 +547,11 @@ fn shore_edges(island: &Island) -> Vec<((usize, usize), Dir)> {
 }
 
 impl Scene<Shared> for Play {
-    fn start(&mut self, shared: &mut Shared, _ctx: &mut Context) {
+    fn start(&mut self, shared: &mut Shared, ctx: &mut Context) {
         shared.sounds.ambience(true);
         shared.sounds.music(Mood::Day);
+        shared.detect_modes(ctx);
+        shared.last = self.island.seed;
     }
 
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
@@ -551,11 +564,29 @@ impl Scene<Shared> for Play {
                 self.message = None;
             }
         }
+        match shared.request.take() {
+            Some(Request::Title) => return Transition::switch(Title::new(shared)),
+            Some(Request::Play(seed)) => return Transition::switch(Play::new(seed)),
+            None => {}
+        }
         self.advance_world(shared, seconds);
-        if self.outcome.is_some() {
-            self.player.previous = self.player.position;
-            self.player.moving = false;
-            return Transition::None;
+        if let Some(outcome) = self.outcome {
+            let record = match outcome {
+                Outcome::Won(time) if shared.best == 0 || time < shared.best => {
+                    shared.best = time;
+                    true
+                }
+                _ => false,
+            };
+            shared.store(ctx);
+            return Transition::switch(End::new(outcome, self.island.seed, record));
+        }
+        if shared.controls.was_pressed(Action::Pause, ctx.input()) {
+            shared.sounds.play(Sfx::Blip);
+            return Transition::push(Pause::new());
+        }
+        if shared.controls.was_pressed(Action::Method, ctx.input()) {
+            shared.cycle_method(ctx);
         }
         let input = ctx.input();
         let controls = &shared.controls;
@@ -620,9 +651,13 @@ impl Scene<Shared> for Play {
                 let mode = frame.graphics_mode().to_string();
                 self.draw_perf(shared, ctx.fps(), &mode);
             }
-            present(frame, area, &self.world, &mut self.big);
+            show(shared, frame, area, &self.world, &mut self.big);
         }
         self.render_ms = started.elapsed().as_secs_f32() * 1000.0;
+        let (total, frames) = shared.render_time.get();
+        shared
+            .render_time
+            .set((total + f64::from(self.render_ms), frames + 1));
         status_line(
             frame,
             &format!(
@@ -1424,6 +1459,38 @@ mod tests {
         }
     }
 
+    /// Carrying every crystal, walking up to the beacon lights it, and the game is won
+    /// after the celebration; at night without it, the game is lost.
+    #[test]
+    fn the_beacon_wins_and_night_loses() {
+        let shared = crate::Shared::new(vnce::vnce_game::SaveFile::new(), false, false);
+        let mut play = Play::new(6);
+        for crystal in &mut play.crystals {
+            crystal.taken = true;
+        }
+        let beacon = play.island.beacon;
+        let beside = crate::island::Dir::ALL
+            .iter()
+            .map(|d| {
+                let (dx, dy) = d.step();
+                (beacon.0 as i32 + dx, beacon.1 as i32 + dy)
+            })
+            .find(|&(x, y)| play.island.is_walkable((x as usize, y as usize)))
+            .expect("the beacon can be reached");
+        play.player.position = (beside.0 as f32 + 0.5, beside.1 as f32 + 0.5);
+        play.collect(&shared, false);
+        assert!(play.beacon_lit);
+        for _ in 0..60 * 4 {
+            play.advance_world(&shared, 1.0 / 60.0);
+        }
+        assert!(matches!(play.outcome, Some(super::Outcome::Won(_))));
+
+        let mut play = Play::new(6);
+        play.clock = super::NIGHT - 0.01;
+        play.advance_world(&shared, 0.1);
+        assert_eq!(play.outcome, Some(super::Outcome::Lost(0)));
+    }
+
     /// Writes frames of the game to the folder in `ISLE_SNAPSHOTS` (skipped without it):
     /// the start, half way through a turn, and the player behind a tree.
     #[test]
@@ -1431,7 +1498,8 @@ mod tests {
         let Ok(folder) = std::env::var("ISLE_SNAPSHOTS") else {
             return;
         };
-        let shared = crate::Shared::new(std::env::var("ISLE_GPU").is_ok(), false);
+        let gpu = std::env::var("ISLE_GPU").is_ok();
+        let shared = crate::Shared::new(vnce::vnce_game::SaveFile::new(), gpu, false);
         let mut play = Play::new(2);
         let settle = |play: &mut Play| {
             let (x, y) = play.player.position;
