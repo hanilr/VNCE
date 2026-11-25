@@ -65,7 +65,6 @@ impl Default for TerminalOptions {
 #[derive(Debug)]
 struct ImageRequest {
     area: Rect,
-    hash: u64,
     /// The image, or `None` when the identical image is already on the screen.
     canvas: Option<Canvas>,
 }
@@ -74,7 +73,6 @@ struct ImageRequest {
 #[derive(Debug)]
 struct PlacedImage {
     area: Rect,
-    hash: u64,
     /// Kitty image id.
     id: u32,
     /// Kept to send the image again (after a clear or when an overlapping image is
@@ -166,16 +164,16 @@ impl Frame<'_> {
                 if area.is_empty() || canvas.width() == 0 || canvas.height() == 0 {
                     return;
                 }
-                let hash = image_hash(canvas);
+                // Compared pixel by pixel: stops at the first difference, so a changed
+                // image costs little, and an identical one about one pass over memory.
                 let on_screen = self
                     .placed
                     .iter()
-                    .any(|placed| placed.area == area && placed.hash == hash);
+                    .any(|placed| placed.area == area && same_pixels(&placed.canvas, canvas));
                 // A later image in the same area replaces an earlier one.
                 self.images.retain(|request| request.area != area);
                 self.images.push(ImageRequest {
                     area,
-                    hash,
                     canvas: (!on_screen).then(|| canvas.clone()),
                 });
             }
@@ -805,8 +803,8 @@ impl ImageState {
             let can_update = !full_redraw && !overlaps_removed;
             let index = self.placed.len();
             match (previous_image, request.canvas) {
-                // Same hash: the same pixels are already known.
-                (Some(placed), _) if placed.hash == request.hash => {
+                // No canvas: the same pixels are already on the screen.
+                (Some(placed), None) => {
                     if can_update {
                         if !kitty {
                             copy_cells(previous, current, request.area);
@@ -839,7 +837,6 @@ impl ImageState {
                             changed_parts(protocol, &placed, &canvas, shown.as_ref(), cell_pixels)
                         })
                         .flatten();
-                    placed.hash = request.hash;
                     placed.canvas = canvas;
                     placed.shown = shown;
                     match update {
@@ -892,7 +889,6 @@ impl ImageState {
                     sends.push(ImageSend::Full(index));
                     self.placed.push(PlacedImage {
                         area: request.area,
-                        hash: request.hash,
                         id,
                         canvas,
                         tiles,
@@ -1403,28 +1399,10 @@ fn invalidate_cells(buffer: &mut Buffer, area: Rect) {
     }
 }
 
-/// A 64-bit FNV-1a hash of the image size and pixels.
-fn image_hash(canvas: &Canvas) -> u64 {
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut feed = |byte: u8| {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(PRIME);
-    };
-    for byte in canvas
-        .width()
-        .to_le_bytes()
-        .into_iter()
-        .chain(canvas.height().to_le_bytes())
-    {
-        feed(byte);
-    }
-    for p in canvas.pixels() {
-        for byte in [p.r, p.g, p.b, p.a] {
-            feed(byte);
-        }
-    }
-    hash
+/// Returns `true` if two images have the same size and pixels (clip and blend mode are
+/// not part of the picture).
+fn same_pixels(a: &Canvas, b: &Canvas) -> bool {
+    (a.width(), a.height()) == (b.width(), b.height()) && a.pixels() == b.pixels()
 }
 
 impl<B: Backend> Drop for Terminal<B> {
@@ -2192,6 +2170,39 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(sequences(&mut terminal).len(), 1);
+        }
+
+        #[test]
+        fn clip_and_blend_mode_do_not_count_as_a_change() {
+            let mut terminal = with_mode(KITTY, 10, 5);
+            let area = Rect::new(0, 0, 2, 2);
+            let red = image(Rgba::rgb(255, 0, 0));
+            terminal.draw(|f| f.draw_image(area, &red)).unwrap();
+            sequences(&mut terminal);
+            let mut same = red.clone();
+            same.set_blend_mode(vnce_raster::BlendMode::Add);
+            same.set_clip(Some(vnce_raster::PixelRect::new(0, 0, 1, 1)));
+            terminal.draw(|f| f.draw_image(area, &same)).unwrap();
+            assert_eq!(sequences(&mut terminal), Vec::<String>::new());
+        }
+
+        #[test]
+        fn a_change_in_the_last_pixel_is_sent() {
+            let mut terminal = with_mode(KITTY, 10, 5);
+            let area = Rect::new(0, 0, 2, 2);
+            let red = image(Rgba::rgb(255, 0, 0));
+            terminal.draw(|f| f.draw_image(area, &red)).unwrap();
+            sequences(&mut terminal);
+            let mut changed = red.clone();
+            changed.pixel(3, 3, Rgba::rgb(0, 0, 255));
+            terminal.draw(|f| f.draw_image(area, &changed)).unwrap();
+            assert_ne!(sequences(&mut terminal), Vec::<String>::new());
+            // A different size with the same pixel count is a change too.
+            let wide = Canvas::filled(8, 2, Rgba::rgb(255, 0, 0));
+            terminal.draw(|f| f.draw_image(area, &changed)).unwrap();
+            sequences(&mut terminal);
+            terminal.draw(|f| f.draw_image(area, &wide)).unwrap();
+            assert_ne!(sequences(&mut terminal), Vec::<String>::new());
         }
 
         #[test]
