@@ -350,6 +350,7 @@ impl<T> ChunkCache<T> {
         }
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.chunks.len()
     }

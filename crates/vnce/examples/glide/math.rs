@@ -133,6 +133,10 @@ impl Mat4 {
     }
 
     /// Perspective projection (see `vnce_gpu::Mat4::perspective`).
+    #[cfg_attr(
+        not(feature = "gpu"),
+        allow(dead_code, reason = "the GPU renderer and the tests use it")
+    )]
     pub fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> Self {
         let f = 1.0 / (fov_y / 2.0).tan();
         let range = far / (near - far);
@@ -242,10 +246,18 @@ impl Camera {
         Mat4::look_to(self.eye, self.forward, self.up)
     }
 
+    #[cfg_attr(
+        not(feature = "gpu"),
+        allow(dead_code, reason = "the GPU renderer and the tests use it")
+    )]
     pub fn projection(&self) -> Mat4 {
         Mat4::perspective(FOV_Y, self.aspect, NEAR, FAR)
     }
 
+    #[cfg_attr(
+        not(feature = "gpu"),
+        allow(dead_code, reason = "the GPU renderer and the tests use it")
+    )]
     pub fn view_projection(&self) -> Mat4 {
         self.projection() * self.view()
     }

@@ -18,11 +18,19 @@ use crate::math::{Vec3, dot, normalize};
 
 /// Panorama size on the CPU (the GPU draws a larger one).
 pub const CPU_PANORAMA: (u32, u32) = (256, 96);
+#[cfg_attr(
+    not(feature = "gpu"),
+    allow(dead_code, reason = "the GPU renderer uses it")
+)]
 pub const GPU_PANORAMA: (u32, u32) = (768, 288);
 /// The panorama spans from straight up down to this far below the horizon.
 const LOWEST: f32 = 0.35;
 
 /// The frame number the GPU sky receives for a day's progress.
+#[cfg_attr(
+    not(feature = "gpu"),
+    allow(dead_code, reason = "the GPU renderer uses it")
+)]
 pub fn phase_frame(phase: f32) -> u32 {
     (phase.clamp(0.0, 1.0) * 100_000.0) as u32
 }
@@ -103,6 +111,10 @@ impl Daylight {
         [0, 1, 2].map(|i| self.horizon[i] * 0.92 + warm[i] * self.golden * 0.12)
     }
 
+    #[cfg_attr(
+        not(feature = "gpu"),
+        allow(dead_code, reason = "the GPU renderer uses it")
+    )]
     pub fn haze_rgba(&self) -> Rgba {
         srgb(self.haze())
     }
@@ -192,6 +204,10 @@ pub fn sample(panorama: &Canvas, u: f32, v: f32) -> Rgba {
 
 /// The GPU sky: the same colors as [`Daylight::sky`], with drifting clouds lit by the sun.
 /// The day's progress arrives in `globals.frame` (see [`phase_frame`]).
+#[cfg_attr(
+    not(feature = "gpu"),
+    allow(dead_code, reason = "the GPU renderer uses it")
+)]
 pub const SKY_SHADER: &str = "
 fn hash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);

@@ -38,6 +38,7 @@ pub struct View {
     pub light: Daylight,
     pub objects: Vec<Object>,
     /// Seconds, for the clouds.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code, reason = "the GPU sky uses it"))]
     pub time: f32,
 }
 
@@ -201,6 +202,11 @@ impl Renderer {
         self.stats
     }
 
+    /// The size of the last picture.
+    pub fn size(&self) -> (u32, u32) {
+        (self.canvas.width(), self.canvas.height())
+    }
+
     /// The last picture (overlays are drawn into it).
     pub fn canvas(&mut self) -> &mut Canvas {
         &mut self.canvas
@@ -299,9 +305,33 @@ pub fn compose_sky(canvas: &mut Canvas, panorama: &Canvas, camera: &Camera, over
     }
     let over = over.filter(|o| (o.width(), o.height()) == (width, height));
     let (w, h) = (width as f32, height as f32);
+    // The sky changes slowly across the picture: it is looked up on a coarse grid of
+    // points and blended between them.
+    let step = if width >= 1280 {
+        8
+    } else if width >= 640 {
+        4
+    } else if width >= 320 {
+        2
+    } else {
+        1
+    };
+    let (columns, rows) = ((width - 1) / step + 2, (height - 1) / step + 2);
+    let mut grid = Vec::with_capacity((columns * rows) as usize);
+    for gy in 0..rows {
+        let sy = 1.0 - 2.0 * ((gy * step) as f32 + 0.5) / h;
+        for gx in 0..columns {
+            let sx = 2.0 * ((gx * step) as f32 + 0.5) / w - 1.0;
+            let (u, v) = sky::panorama_point(camera.ray(sx, sy));
+            grid.push(sky::sample(panorama, u, v));
+        }
+    }
     let pixels = canvas.pixels_mut();
+    let area = step * step;
     for y in 0..height {
-        let sy = 1.0 - 2.0 * (y as f32 + 0.5) / h;
+        let (gy, fy) = (y / step, y % step);
+        let top = (gy * columns) as usize;
+        let bottom = top + columns as usize;
         for x in 0..width {
             let index = (y * width + x) as usize;
             let front = over.map_or(Rgba::TRANSPARENT, |o| o.pixels()[index]);
@@ -309,16 +339,34 @@ pub fn compose_sky(canvas: &mut Canvas, panorama: &Canvas, camera: &Camera, over
                 pixels[index] = front;
                 continue;
             }
-            let sx = 2.0 * (x as f32 + 0.5) / w - 1.0;
-            let (u, v) = sky::panorama_point(camera.ray(sx, sy));
-            let back = sky::sample(panorama, u, v);
+            let (gx, fx) = ((x / step) as usize, x % step);
+            // Bilinear weights in whole numbers (they add up to `area`).
+            let weights = [
+                (step - fx) * (step - fy),
+                fx * (step - fy),
+                (step - fx) * fy,
+                fx * fy,
+            ];
+            let corners = [
+                grid[top + gx],
+                grid[top + gx + 1],
+                grid[bottom + gx],
+                grid[bottom + gx + 1],
+            ];
+            let channel = |get: fn(Rgba) -> u8| {
+                let sum: u32 = corners
+                    .iter()
+                    .zip(weights)
+                    .map(|(&c, w)| u32::from(get(c)) * w)
+                    .sum();
+                (sum + area / 2) / area
+            };
             let rest = u32::from(255 - front.a);
-            let mix =
-                |f: u8, b: u8| (u32::from(f) + (u32::from(b) * rest + 127) / 255).min(255) as u8;
+            let mix = |f: u8, b: u32| (u32::from(f) + (b * rest + 127) / 255).min(255) as u8;
             pixels[index] = Rgba::rgb(
-                mix(front.r, back.r),
-                mix(front.g, back.g),
-                mix(front.b, back.b),
+                mix(front.r, channel(|c| c.r)),
+                mix(front.g, channel(|c| c.g)),
+                mix(front.b, channel(|c| c.b)),
             );
         }
     }
