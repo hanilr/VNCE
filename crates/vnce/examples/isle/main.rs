@@ -254,6 +254,7 @@ mod tests {
     use vnce::vnce_game::SceneStack;
     use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Rgba};
     use vnce::vnce_runtime::{RunConfig, ScriptedDriver, run_with};
+    use vnce::vnce_term::input::{MouseButton, MouseEvent, MouseEventKind};
     use vnce::vnce_term::{
         Capabilities, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, Terminal, TestBackend,
     };
@@ -281,7 +282,7 @@ mod tests {
     fn smoke_test_walking_turning_zooming() {
         let mut game = bench::Limited {
             game: SceneStack::new(play::Play::new(5), Shared::new()),
-            frames: 300,
+            frames: 420,
         };
         let capabilities = Capabilities {
             key_release_events: true,
@@ -298,6 +299,24 @@ mod tests {
         press(&mut driver, 3300, 600, KeyCode::Down);
         press(&mut driver, 4000, 60, KeyCode::Char('-'));
         press(&mut driver, 4200, 60, KeyCode::Char('-'));
+        // Hover and click a few cells: walks start (or the tile is out of reach).
+        for (at, column, row) in [(4500, 30, 10), (4800, 70, 20), (5600, 50, 17)] {
+            for (offset, kind) in [
+                (0, MouseEventKind::Moved),
+                (40, MouseEventKind::Down(MouseButton::Left)),
+                (90, MouseEventKind::Up(MouseButton::Left)),
+            ] {
+                driver.push_event(
+                    Duration::from_millis(at + offset),
+                    Event::Mouse(MouseEvent {
+                        kind,
+                        column,
+                        row,
+                        modifiers: KeyModifiers::NONE,
+                    }),
+                );
+            }
+        }
         run_with(&mut game, RunConfig::default(), terminal, driver).expect("the game runs");
     }
 

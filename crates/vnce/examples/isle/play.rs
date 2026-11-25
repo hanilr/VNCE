@@ -4,6 +4,7 @@
 use std::f32::consts::FRAC_PI_2;
 use std::time::{Duration, Instant};
 
+use vnce::vnce_core::Rect;
 use vnce::vnce_game::{
     Aabb, Animation, Animator, Camera, Playback, Scene, SpriteSheet, Timer, Transition, ease,
     move_and_collide,
@@ -62,6 +63,13 @@ enum Actor {
     Beacon,
 }
 
+/// The tile under the mouse and the walk to it.
+struct Hover {
+    tile: (usize, usize),
+    from: (usize, usize),
+    path: Vec<(usize, usize)>,
+}
+
 /// Where the player was drawn this frame, to find the parts hidden later.
 struct Drawn {
     left: i32,
@@ -93,6 +101,14 @@ pub struct Play {
     /// Pixels of the player hidden by things in front, shown as an outline.
     hidden: Vec<(i32, i32)>,
     drawn: Option<Drawn>,
+    /// Where the world was shown last frame: the cell area and the world view size, to
+    /// turn mouse positions into world pixels.
+    shown: Option<(Rect, u32, u32)>,
+    /// The tile under the mouse, the tile the walk to it starts from, and the walk
+    /// (empty when it cannot be reached).
+    hover: Option<Hover>,
+    /// Tiles still to walk through after a click, the next one first.
+    route: Vec<(usize, usize)>,
 }
 
 impl Play {
@@ -138,6 +154,9 @@ impl Play {
             big: Canvas::new(0, 0),
             hidden: Vec::new(),
             drawn: None,
+            shown: None,
+            hover: None,
+            route: Vec::new(),
             island,
         }
     }
@@ -182,6 +201,8 @@ impl Play {
             self.player.moving = false;
             return;
         }
+        // Keys take over from a clicked walk.
+        self.route.clear();
         // Screen direction to view axes (a tile is twice as wide as high on the screen),
         // then turned back into the world.
         let (u, v) = (sx * 0.5 + sy, sy - sx * 0.5);
@@ -249,7 +270,11 @@ impl Scene<Shared> for Play {
                 self.turn = None;
             }
         }
+        self.update_mouse(shared, ctx);
         self.walk_by_keys(shared, ctx);
+        if !self.player.moving {
+            self.follow_route(ctx.dt_secs());
+        }
         if self.player.moving {
             self.player.walk.update(dt);
         }
@@ -269,6 +294,7 @@ impl Scene<Shared> for Play {
     fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
         let started = Instant::now();
         let (area, width, height) = view(ctx, frame, self.zoom);
+        self.shown = Some((area, width, height));
         if width > 0 {
             self.draw_world(ctx.alpha(), width, height);
             present(frame, area, &self.world, &mut self.big);
@@ -345,6 +371,136 @@ impl Play {
         }
         self.find_hidden();
         self.draw_outline();
+        self.draw_hover(&view);
+    }
+
+    /// The view of the last frame at the camera's current place (for the mouse).
+    fn current_view(&self) -> View {
+        let offset = self.camera.offset(1.0);
+        View::new(self.angle(), cache_origin()).shifted(-offset.0 as f32, -offset.1 as f32)
+    }
+
+    /// Finds the tile under the mouse and the walk to it; a click starts that walk.
+    fn update_mouse(&mut self, shared: &Shared, ctx: &Context) {
+        let input = ctx.input();
+        let (Some(mouse), Some((area, width, height))) = (input.mouse_position(), self.shown)
+        else {
+            self.hover = None;
+            return;
+        };
+        if !area.contains(mouse) || width == 0 || self.turn.is_some() {
+            self.hover = None;
+            return;
+        }
+        // The middle of the cell under the mouse, in world pixels.
+        let sx = (f32::from(mouse.x - area.x) + 0.5) * width as f32 / f32::from(area.width);
+        let sy = (f32::from(mouse.y - area.y) + 0.5) * height as f32 / f32::from(area.height);
+        let view = self.current_view();
+        let Some(tile) = iso::pick(&view, &self.island, sx, sy) else {
+            self.hover = None;
+            return;
+        };
+        let from = self.player_tile();
+        if self
+            .hover
+            .as_ref()
+            .is_none_or(|h| h.tile != tile || h.from != from)
+        {
+            let path = self.island.path(from, tile).unwrap_or_default();
+            self.hover = Some(Hover { tile, from, path });
+        }
+        if shared.controls.was_pressed(Action::Walk, input) {
+            if let Some(hover) = &self.hover {
+                // The first tile is where the player stands.
+                self.route = hover.path.iter().skip(1).copied().collect();
+            }
+        }
+    }
+
+    /// Walks towards the next tile of a clicked route.
+    fn follow_route(&mut self, seconds: f32) {
+        let Some(&next) = self.route.first() else {
+            return;
+        };
+        let target = (next.0 as f32 + 0.5, next.1 as f32 + 0.5);
+        let (x, y) = self.player.position;
+        let (dx, dy) = (target.0 - x, target.1 - y);
+        let distance = (dx * dx + dy * dy).sqrt();
+        let step = SPEED * seconds;
+        if distance < 1e-4 {
+            self.route.remove(0);
+        } else if distance <= step {
+            let before = self.player.position;
+            self.step_player((dx, dy), self.screen_direction((dx, dy)));
+            if self.player.position == before {
+                // Something is in the way (it should not be): give up the walk.
+                self.route.clear();
+            } else {
+                self.route.remove(0);
+            }
+        } else {
+            let (mx, my) = (dx / distance * step, dy / distance * step);
+            self.step_player((mx, my), self.screen_direction((dx, dy)));
+        }
+    }
+
+    /// The screen direction of a world direction, for the sprite.
+    fn screen_direction(&self, (dx, dy): (f32, f32)) -> (f32, f32) {
+        let view = View::new(self.angle(), (0.0, 0.0));
+        let c = SIZE as f32 / 2.0;
+        let (ax, ay) = view.project(c, c, 0.0);
+        let (bx, by) = view.project(c + dx, c + dy, 0.0);
+        (bx - ax, by - ay)
+    }
+
+    /// The tile under the mouse as an outline on its top and the walk to it as dots; the
+    /// end of a clicked walk as a smaller pulsing outline.
+    fn draw_hover(&mut self, view: &View) {
+        let pulse = 0.75 + 0.25 * (self.time * 5.0).sin();
+        if let Some(&goal) = self.route.last() {
+            self.outline(view, goal, Rgba::new(255, 214, 120, (230.0 * pulse) as u8));
+        }
+        let Some(hover) = &self.hover else {
+            return;
+        };
+        let (tile, reachable) = (hover.tile, !hover.path.is_empty());
+        let dots: Vec<(usize, usize)> = hover.path.iter().skip(1).copied().collect();
+        let color = if reachable {
+            Rgba::new(255, 250, 220, (200.0 * pulse) as u8)
+        } else {
+            Rgba::new(255, 110, 90, (170.0 * pulse) as u8)
+        };
+        self.outline(view, tile, color);
+        // Dots along the walk, skipping the player's own tile.
+        for (px, py) in dots {
+            let (cx, cy) = (px as f32 + 0.5, py as f32 + 0.5);
+            let h = self.island.height_at(cx, cy);
+            let (sx, sy) = view.project(cx, cy, h);
+            let (dx, dy) = (sx.round() as i32 - 1, sy.round() as i32 - 1);
+            self.world
+                .fill_rect(dx, dy + 1, 3, 1, Rgba::new(40, 30, 20, 90));
+            self.world
+                .fill_rect(dx, dy, 3, 1, Rgba::new(255, 250, 220, 220));
+        }
+    }
+
+    /// An outline around the top of `tile`.
+    fn outline(&mut self, view: &View, tile: (usize, usize), color: Rgba) {
+        let heights = iso::corners(&self.island, tile);
+        let (x, y) = (tile.0 as f32, tile.1 as f32);
+        let points = [(x, y), (x + 1.0, y), (x + 1.0, y + 1.0), (x, y + 1.0)];
+        let projected: Vec<(i32, i32)> = points
+            .iter()
+            .zip(heights)
+            .map(|(&(px, py), h)| {
+                let (sx, sy) = view.project(px, py, h);
+                (sx.round() as i32, sy.round() as i32)
+            })
+            .collect();
+        for k in 0..4 {
+            let (a, b) = (projected[k], projected[(k + 1) % 4]);
+            self.world.line(a.0, a.1, b.0, b.1, color);
+        }
     }
 
     /// The actors with their depth, position and height.
@@ -534,6 +690,27 @@ mod tests {
     use crate::island::{Prop, index};
     use crate::write_png;
 
+    /// A clicked walk reaches every crystal, step by step at 60 updates a second.
+    #[test]
+    fn clicked_walks_arrive() {
+        let mut play = Play::new(4);
+        for crystal in play.island.crystals.clone() {
+            let path = play
+                .island
+                .path(play.player_tile(), crystal)
+                .expect("reachable");
+            play.route = path.into_iter().skip(1).collect();
+            for _ in 0..60 * 60 {
+                if play.route.is_empty() {
+                    break;
+                }
+                play.follow_route(1.0 / 60.0);
+            }
+            assert!(play.route.is_empty(), "stuck on the way to {crystal:?}");
+            assert_eq!(play.player_tile(), crystal);
+        }
+    }
+
     /// Writes frames of the game to the folder in `ISLE_SNAPSHOTS` (skipped without it):
     /// the start, half way through a turn, and the player behind a tree.
     #[test]
@@ -553,6 +730,15 @@ mod tests {
         settle(&mut play);
         play.draw_world(1.0, 240, 140);
         write_png(&play.world, &format!("{folder}/play-start.png"), 4);
+
+        // Hovering a tile a few steps up the beach.
+        let from = play.player_tile();
+        let tile = (from.0.saturating_sub(3), from.1.saturating_sub(4));
+        let path = play.island.path(from, tile).unwrap_or_default();
+        play.hover = Some(super::Hover { tile, from, path });
+        play.draw_world(1.0, 240, 140);
+        write_png(&play.world, &format!("{folder}/play-hover.png"), 4);
+        play.hover = None;
 
         play.turn = Some(Turn {
             from: 0.0,
