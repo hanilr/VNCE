@@ -55,3 +55,18 @@ None.
 
 - Comparing whole images costs about 1 ms when nothing changed; still far below hashing.
 - The pool must not keep large buffers forever (it holds at most a few canvases).
+
+## Baseline (step 1)
+
+`cargo run --release --example perf -- --frames 100`, full-screen 2000 × 1200 pixel image,
+three runs (values agreed within 5 %), ms per frame:
+
+| Scenario | render | flush | bytes per frame |
+| --- | ---: | ---: | ---: |
+| Kitty, still | 8.7 | 0.1 | 0 |
+| Kitty, moving sprite | 9.8 | 2.9 | 164 KB |
+| Sixel, still | 8.7 | 0.1 | 0 |
+| Sixel, moving sprite | 9.8 | 23.0 | 3.8 KB |
+
+`render` is almost entirely the hash. The Sixel `flush` of 23 ms for a 3.8 KB patch is
+also far too much; step 4 looks at where it goes.

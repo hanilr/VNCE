@@ -30,7 +30,9 @@ use vnce::vnce_core::{Color, ColorDepth, Rect, Size, Style};
 use vnce::vnce_raster::{
     BlendMode, BlitOptions, Canvas, PixelMode, RenderOptions, Rgba, ScaleQuality,
 };
-use vnce::vnce_term::{Backend, Capabilities, Terminal, TerminalOptions};
+use vnce::vnce_term::{
+    Backend, Capabilities, GraphicsMode, GraphicsProtocol, Terminal, TerminalOptions,
+};
 
 /// Terminal size of the terminal scenarios, in cells.
 const COLUMNS: u16 = 200;
@@ -79,6 +81,9 @@ fn main() -> io::Result<()> {
 
     println!("Terminal ({COLUMNS}×{ROWS} cells, {frames} frames):");
     terminal_scenarios(frames)?;
+    println!();
+    println!("Images with graphics protocols ({COLUMNS}×{ROWS} cells, {frames} frames):");
+    image_scenarios(frames)?;
     println!();
     println!("Canvas (400×240 pixels, {frames} frames):");
     canvas_scenarios(frames);
@@ -217,6 +222,58 @@ fn terminal_scenarios(frames: u32) -> io::Result<()> {
     }
     let bytes = terminal.backend().bytes;
     report("empty frame", frames, start.elapsed(), Some(bytes));
+    Ok(())
+}
+
+/// Full-screen images shown with Kitty and Sixel, at the exact pixel size of the cells
+/// (as Relay draws them): a still picture, and the same picture with a moving sprite.
+/// `render` is the time spent inside the draw closure (`Frame::draw_image`); `flush` is the
+/// rest of the frame (planning and encoding).
+fn image_scenarios(frames: u32) -> io::Result<()> {
+    let area = Rect::new(0, 0, COLUMNS, ROWS);
+    for protocol in [GraphicsProtocol::Kitty, GraphicsProtocol::Sixel] {
+        for moving in [false, true] {
+            let mut terminal = sink_terminal(ColorDepth::TrueColor)?;
+            terminal.set_graphics_mode(GraphicsMode::Protocol(protocol));
+            let (cell_width, cell_height) = terminal.cell_pixels();
+            let mut background = Canvas::new(
+                u32::from(COLUMNS) * u32::from(cell_width),
+                u32::from(ROWS) * u32::from(cell_height),
+            );
+            gradient(&mut background, 0);
+            let mut canvas = background.clone();
+            // The first frame sends the whole image; it is not measured.
+            terminal.draw(|f| f.draw_image(area, &canvas))?;
+            terminal.backend_mut().bytes = 0;
+            let (mut render, mut total) = (Duration::ZERO, Duration::ZERO);
+            for frame in 0..frames {
+                if moving {
+                    canvas.pixels_mut().copy_from_slice(background.pixels());
+                    let x = (frame * 7 % (canvas.width() - 40)) as i32;
+                    canvas.fill_rect(x, 300, 40, 40, Rgba::rgb(255, 255, 255));
+                }
+                let start = Instant::now();
+                terminal.draw(|f| {
+                    let start = Instant::now();
+                    f.draw_image(area, &canvas);
+                    render += start.elapsed();
+                })?;
+                total += start.elapsed();
+            }
+            let bytes = terminal.backend().bytes;
+            let name = format!(
+                "{protocol:?}, {}",
+                if moving { "moving sprite" } else { "still" }
+            );
+            report(&format!("{name}: render"), frames, render, None);
+            report(
+                &format!("{name}: flush"),
+                frames,
+                total.saturating_sub(render),
+                Some(bytes),
+            );
+        }
+    }
     Ok(())
 }
 
