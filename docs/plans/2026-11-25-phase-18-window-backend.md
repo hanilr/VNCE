@@ -1,7 +1,7 @@
 # Plan: Phase 18 — Native window backend `vnce-window`
 
 **Date:** 2026-11-25
-**Status:** Approved, in progress (the user chose this over writing an own terminal; on
+**Status:** Done (the user chose this over writing an own terminal; on
 2026-11-25 the user approved the detailed plan below, chose a free font that fits the
 project's license, and asked for the most performant way, so showing GPU pictures without
 a readback is part of this phase)
@@ -93,6 +93,42 @@ native window instead of writing escape sequences:
   `RenderTarget::show`, `ShaderQuad` params and premultiplied textures, images under the
   cells, `vnce::run` with the `window` feature, every example through it, and Glide's
   layered sky and meshes in a window.
+
+- Step 7: `glide --bench --window`, `docs/SHIPPING-GAMES.md`, the docs and these results.
+
+## Results
+
+Glide's autopilot on a course, 200 × 60 cells (about 2000 × 1260 pixels in the window,
+2000 × 1140 for Kitty and Sixel at the default cell size); development machine with an
+RTX 5070 Laptop GPU:
+
+| Where                     | Per frame | World picture |
+| ------------------------- | --------- | ------------- |
+| Window, GPU (no readback) | 3.5 ms    | 0.25 ms       |
+| Window, CPU renderer      | 23.9 ms   | 19.4 ms       |
+| Kitty, GPU                | 26.7 ms   | 10.4 ms       |
+| Kitty, CPU                | 29.4 ms   | 18.4 ms       |
+
+In a window the GPU's sky and meshes never leave the GPU; most of the remaining time is
+the instruments: a transparent picture of the full size drawn on the CPU and uploaded
+every frame (a smaller layer would make it faster). `gpu_cube` takes 0.14 ms on the GPU
+per frame in a window, without a readback.
+
+## Implementation notes
+
+- `winit`'s `pump_app_events` lets the window live inside vnce's own loop on Windows,
+  macOS and Linux; the window is created in the first pump.
+- One GPU device per process: whichever of the game and the window creates a `Gpu`
+  first, the other uses it (the window checks that the adapter can present to its
+  surface, else it makes its own and the game falls back to reading back).
+- Render targets get a second view without sRGB conversion; the window writes sRGB values
+  into a non-sRGB view of its surface, so colors match a terminal exactly.
+- In a terminal images cover text; in the window they are drawn under the cells, because
+  menus over a picture are the common case in games.
+- Games keep the display method chosen in a window apart from the terminal's in their
+  save files.
+- `VNCE_WINDOW_SCREENSHOT` renders a frame again into a texture and saves it as PNG,
+  without capturing the rest of the desktop.
 
 ## Dependencies (approved)
 

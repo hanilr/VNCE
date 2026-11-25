@@ -74,6 +74,42 @@ impl Backend for Sink {
     }
 }
 
+/// Flies the course in a native window (200 × 60 cells, no vsync, no frame limit) and
+/// prints the time per frame and the part of it spent drawing the world.
+#[cfg(feature = "window")]
+pub fn run_window(gpu: bool) {
+    use vnce::vnce_window::{WindowOptions, WindowSize};
+
+    const FRAMES: u64 = 600;
+    let shared = Shared::new(SaveFile::new(), gpu, false);
+    let name = shared.renderer.borrow().describe();
+    let mut game = Limited {
+        game: SceneStack::new(Play::bench(3), shared),
+        frames: FRAMES,
+    };
+    let options = WindowOptions {
+        size: WindowSize::Cells(200, 60),
+        vsync: false,
+        ..WindowOptions::titled("Glide bench")
+    };
+    let config = RunConfig {
+        fps: FpsLimit::Unlimited,
+        ..RunConfig::default()
+    };
+    let start = Instant::now();
+    if let Err(error) = vnce::vnce_window::run(&mut game, config, &options) {
+        println!("window: {error}");
+        return;
+    }
+    let elapsed = start.elapsed();
+    let (render, frames) = game.game.data().render_time.get();
+    println!(
+        "Glide in a window, {FRAMES} frames at 200×60 cells, no frame limit: {:.2} ms per frame (world {:.2} ms), {name}",
+        elapsed.as_secs_f64() * 1000.0 / FRAMES as f64,
+        render / f64::from(frames.max(1)),
+    );
+}
+
 /// Flies the course in every display method, on the GPU (when `gpu` and there is one)
 /// and on the CPU, and prints the time per frame, the part of it spent drawing the world,
 /// and the output per frame.

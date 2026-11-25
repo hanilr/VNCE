@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a normal, `flat_shaded` gives every triangle its own face normal, and `math`
   exposes `sub`, `dot`, `cross` and `normalize`. `gpu_cube` (`L` toggles light and fog)
   and Relay's reactor core use them.
+- `glide --bench --window` measures the course in a native window (no frame limit), next
+  to the terminal bench; `docs/SHIPPING-GAMES.md` explains releasing a game in a window
+  (console, platforms, save files, the font's license).
 - `relay` example: the showcase game. Five wings of a dark station show the GPU shader
   and mesh renderer (with CPU fallbacks), every pixel mode next to real pixels and fast /
   exact scaling, synthesized music and a pad puzzle, and the widgets with Unicode text;

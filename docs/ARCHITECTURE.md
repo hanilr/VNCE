@@ -30,6 +30,7 @@ The engine is **cross-platform** and targets:
 | `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.          | Phase 6    |
 | `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers, random numbers, save files. | Phase 8, 11 |
 | `vnce-audio`   | `vnce_audio`   | Mixer, WAV / OGG decoding, sound synthesis, playback with `cpal`.    | Phase 9    |
+| `vnce-window`  | `vnce_window`  | Native window: cells and images drawn with `wgpu`, `winit` events.   | Phase 18   |
 | `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.     | Phase 1    |
 
 Package names use the `vnce-` prefix (`vnce` is short for Variation CLI Engine); every crate
@@ -172,6 +173,24 @@ converted through the same pixel modes. Enabled with a `gpu` feature flag.
   into distance fog per pixel in world space; vertices without a normal stay unlit), with
   a small `Mat4` type and vector helpers. Users can
   also write their own `wgpu` passes; the `wgpu` crate is re-exported.
+- A process has one GPU device (`Gpu::new` returns it once it exists). A native window
+  that draws with it marks it, and `RenderTarget::show` then hands the texture to the
+  window instead of reading it back.
+
+### Native window
+
+`vnce-window` is a `Backend` and a `Driver`: the `Terminal` gives it each finished frame
+through `Backend::present` (no escape sequences), and its driver pumps `winit`'s event
+loop from vnce's own game loop, so timing and fixed updates stay as in a terminal.
+
+- Images (`GraphicsMode::Native`, "window") are textures in the window's real pixels,
+  uploaded only when they change; `Frame::draw_texture` shows GPU textures directly
+  (premultiplied when drawn on a transparent background). Images are drawn first and the
+  cells over them: default backgrounds are transparent.
+- Cells: one instanced draw from a glyph atlas of the bundled JetBrains Mono (fake bold
+  and italic); block elements, quadrants, sextants, octants, braille and box drawing are
+  drawn by code (`vnce_raster::block_pattern`), so pixel modes and borders line up.
+- `vnce::run` (feature `window`) chooses the window, `--terminal` the terminal.
 
 ### Quality
 
@@ -303,5 +322,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-16-isometric-demo.md`](plans/2026-11-25-phase-16-isometric-demo.md).
 17. **Phase 17:** Lit meshes and the 3D flight showcase Glide — see
    [`plans/2026-11-25-phase-17-3d-flight-demo.md`](plans/2026-11-25-phase-17-3d-flight-demo.md).
+18. **Phase 18:** The native window `vnce-window` — see
+   [`plans/2026-11-25-phase-18-window-backend.md`](plans/2026-11-25-phase-18-window-backend.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

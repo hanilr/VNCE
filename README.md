@@ -56,6 +56,12 @@ other image. It comes with a full-screen shader helper (`ShaderQuad`) and a 3D m
 (`MeshRenderer`, with sun and ambient light and distance fog); your own `wgpu` render passes
 work too.
 
+To release a game, enable the `window` feature: `vnce::run` then opens the same game in its
+own native window (`winit` and `wgpu`), with cells drawn on the GPU from the bundled
+JetBrains Mono font, images in real pixels, GPU pictures shown without a readback, and
+F11 / Alt+Enter for fullscreen; `--terminal` keeps the terminal. See
+[`docs/SHIPPING-GAMES.md`](docs/SHIPPING-GAMES.md).
+
 For interfaces, `vnce_ui` (feature `ui`, on by default) has a small set of widgets: `Layout`,
 `Paragraph` (wrapping, alignment, `…`), `Block` (borders and titles), `Gauge`, `List` (menus),
 `FpsOverlay` and `Clear` (popups). They draw into `frame.buffer_mut()` next to pixel
@@ -148,6 +154,7 @@ cargo fmt --all --check
 | `crates/vnce-ui/`         | Widgets (`vnce_ui`).                          |
 | `crates/vnce-game/`       | Game building blocks (`vnce_game`).           |
 | `crates/vnce-audio/`      | Sound (`vnce_audio`).                         |
+| `crates/vnce-window/`     | Native window (`vnce_window`).                |
 | `tools/gen-block-tables/` | Generates block-character tables.             |
 | `docs/ARCHITECTURE.md`    | High-level design.                            |
 | `docs/tutorial/`          | Step-by-step tutorial (tested as doc-tests).  |

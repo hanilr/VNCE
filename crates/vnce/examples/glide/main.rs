@@ -311,6 +311,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| args.iter().any(|a| a == name);
     if flag("--bench") {
+        #[cfg(feature = "window")]
+        if flag("--window") {
+            bench::run_window(!flag("--cpu"));
+            return Ok(());
+        }
         bench::run(!flag("--cpu"));
         return Ok(());
     }
