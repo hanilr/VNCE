@@ -96,10 +96,10 @@ where
     let mut next_frame = previous;
     let mut accumulator = Duration::ZERO;
 
-    while !ctx.quit {
+    while !ctx.quit.get() {
         // 1. Wait until the next frame is due, handling input as it arrives.
         handle_events(game, &mut ctx, &config, &mut driver, next_frame)?;
-        if ctx.quit {
+        if ctx.quit.get() {
             break;
         }
 
@@ -109,7 +109,7 @@ where
             .saturating_duration_since(previous)
             .min(config.max_frame_time);
         previous = now;
-        if ctx.paused {
+        if ctx.paused.get() {
             accumulator = Duration::ZERO;
         } else {
             accumulator += frame_time;
@@ -122,12 +122,12 @@ where
                 ctx.update_count += 1;
                 ctx.elapsed += step;
                 ctx.ups_meter.record(now);
-                if ctx.quit {
+                if ctx.quit.get() {
                     break;
                 }
             }
         }
-        if ctx.quit {
+        if ctx.quit.get() {
             break;
         }
         ctx.alpha =
@@ -171,7 +171,7 @@ fn handle_events<G: Game, D: Driver>(
         };
         let now = driver.now();
         handle_event(game, ctx, config, &event, now);
-        if ctx.quit {
+        if ctx.quit.get() {
             return Ok(());
         }
         if now >= deadline {
@@ -195,13 +195,13 @@ fn handle_event<G: Game>(
         return;
     }
     match event {
-        Event::FocusLost if config.pause_on_focus_lost && !ctx.paused => {
-            ctx.paused = true;
-            ctx.paused_by_focus = true;
+        Event::FocusLost if config.pause_on_focus_lost && !ctx.paused.get() => {
+            ctx.paused.set(true);
+            ctx.paused_by_focus.set(true);
         }
-        Event::FocusGained if ctx.paused_by_focus => {
-            ctx.paused = false;
-            ctx.paused_by_focus = false;
+        Event::FocusGained if ctx.paused_by_focus.get() => {
+            ctx.paused.set(false);
+            ctx.paused_by_focus.set(false);
         }
         Event::Resize(size) => ctx.size = *size,
         _ => {}

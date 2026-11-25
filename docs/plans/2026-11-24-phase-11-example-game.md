@@ -35,6 +35,7 @@ and volume settings, sound and music with `--features audio`.
   `&mut Context` method (for example `set_graphics_mode`) must read the input again
   afterwards. An API that returns a copy of the input changes (or a method that takes the
   graphics mode change after input handling) would be easier.
+  **Done:** the request methods of `Context` take `&self` (the values live in `Cell`s).
 - There is no random generator in the engine; Lantern carries its own xorshift.
   **Done:** `vnce_game::Rng` (Lantern and `stars` use it).
 - Text inside the pixel world (score, titles) is not possible yet without a bitmap font;
@@ -72,5 +73,5 @@ was discussed and declined.
 
 Step 1 of the agreed order is done, one commit per piece: `Rng`, `Font`, key and binding
 names (`KeyCode` / `Binding` implement `Display` and `FromStr`), `SaveFile` with
-`data_dir`, Lantern saving, the controls screen and the floor variants. Still open from
-the notes: the `Context::input()` borrow. Next: step 2, the tutorial.
+`data_dir`, Lantern saving, the controls screen and the floor variants. The `Context::input()`
+borrow is fixed too. Next: step 2, the tutorial.

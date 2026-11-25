@@ -101,7 +101,7 @@ impl Shared {
     }
 
     /// Restores the frame rate and the display method saved by [`Shared::store`].
-    fn restore_screen(&self, ctx: &mut Context) {
+    fn restore_screen(&self, ctx: &Context) {
         let rate = self.save.get_str("frame_rate");
         if let Some(&limit) = FRAME_RATES
             .iter()
@@ -619,7 +619,7 @@ fn popup(frame: &mut Frame<'_>, title: &str, lines: Vec<Line<'_>>, accent: Color
         .render(area, buffer);
 }
 
-fn cycle_method(shared: &Shared, ctx: &mut Context) {
+fn cycle_method(shared: &Shared, ctx: &Context) {
     if shared.modes.is_empty() {
         return;
     }
@@ -725,11 +725,11 @@ impl Scene<Shared> for Title {
         if controls.was_pressed(Action::Method, input) {
             cycle_method(shared, ctx);
         }
-        if shared.controls.was_pressed(Action::Quit, ctx.input()) {
+        if shared.controls.was_pressed(Action::Quit, input) {
             shared.store(ctx);
             return Transition::Quit;
         }
-        if shared.controls.was_pressed(Action::Confirm, ctx.input()) {
+        if shared.controls.was_pressed(Action::Confirm, input) {
             shared.sounds.play(Sfx::Blip);
             return match self.menu.selected() {
                 Some(0) => Transition::switch(Play::new(1, 0, LIVES, self.time.to_bits().into())),

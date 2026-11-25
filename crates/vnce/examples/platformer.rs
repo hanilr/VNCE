@@ -460,7 +460,7 @@ fn help_line(frame: &mut Frame<'_>, text: &str) {
 }
 
 /// Cycles the display method with `G`.
-fn cycle_method(shared: &Shared, ctx: &mut Context) {
+fn cycle_method(shared: &Shared, ctx: &Context) {
     if shared.modes.is_empty() {
         return;
     }
@@ -533,10 +533,10 @@ impl Scene<Shared> for Title {
         if shared.controls.was_pressed(Action::Method, input) {
             cycle_method(shared, ctx);
         }
-        if shared.controls.was_pressed(Action::Quit, ctx.input()) {
+        if shared.controls.was_pressed(Action::Quit, input) {
             return Transition::Quit;
         }
-        if shared.controls.was_pressed(Action::Confirm, ctx.input()) {
+        if shared.controls.was_pressed(Action::Confirm, input) {
             shared.sounds.play(Sfx::Blip);
             return Transition::switch(Play::new());
         }

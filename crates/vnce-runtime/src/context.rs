@@ -1,5 +1,6 @@
 //! The game context: time, input, settings and control of the loop.
 
+use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use vnce_core::Size;
@@ -10,15 +11,41 @@ use crate::input::InputState;
 use crate::meter::RateMeter;
 
 /// Everything a [`Game`](crate::Game) can read or change while it runs.
+///
+/// The methods that request a change ([`Context::quit`], [`Context::set_paused`],
+/// [`Context::set_fps_limit`], [`Context::set_update_rate`] and
+/// [`Context::set_graphics_mode`]) take `&self`, so they can be called while the input
+/// from [`Context::input`] is still in use:
+///
+/// ```
+/// use vnce_runtime::{Context, Game};
+/// use vnce_term::{Frame, KeyCode};
+///
+/// struct Demo;
+///
+/// impl Game for Demo {
+///     fn update(&mut self, ctx: &mut Context) {
+///         let input = ctx.input();
+///         if input.was_pressed(KeyCode::Char('p')) {
+///             ctx.set_paused(!ctx.is_paused());
+///         }
+///         if input.was_pressed(KeyCode::Char('q')) {
+///             ctx.quit();
+///         }
+///     }
+///
+///     fn render(&mut self, _ctx: &Context, _frame: &mut Frame<'_>) {}
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct Context {
-    pub(crate) quit: bool,
-    pub(crate) paused: bool,
+    pub(crate) quit: Cell<bool>,
+    pub(crate) paused: Cell<bool>,
     /// Set when the game was paused because the window lost focus.
-    pub(crate) paused_by_focus: bool,
-    update_rate: u32,
-    update_interval: Duration,
-    fps: FpsLimit,
+    pub(crate) paused_by_focus: Cell<bool>,
+    update_rate: Cell<u32>,
+    update_interval: Cell<Duration>,
+    fps: Cell<FpsLimit>,
     pub(crate) elapsed: Duration,
     pub(crate) alpha: f32,
     pub(crate) update_count: u64,
@@ -31,7 +58,7 @@ pub struct Context {
     pub(crate) terminal_info: TerminalInfo,
     pub(crate) graphics_mode: GraphicsMode,
     /// A graphics mode change requested by the game, applied before the next frame.
-    pub(crate) graphics_request: Option<GraphicsMode>,
+    pub(crate) graphics_request: Cell<Option<GraphicsMode>>,
 }
 
 impl Context {
@@ -43,12 +70,12 @@ impl Context {
         graphics_mode: GraphicsMode,
     ) -> Self {
         Self {
-            quit: false,
-            paused: false,
-            paused_by_focus: false,
-            update_rate: config.update_rate,
-            update_interval: config::interval(config.update_rate),
-            fps: config.fps,
+            quit: Cell::new(false),
+            paused: Cell::new(false),
+            paused_by_focus: Cell::new(false),
+            update_rate: Cell::new(config.update_rate),
+            update_interval: Cell::new(config::interval(config.update_rate)),
+            fps: Cell::new(config.fps),
             elapsed: Duration::ZERO,
             alpha: 0.0,
             update_count: 0,
@@ -60,31 +87,31 @@ impl Context {
             size,
             terminal_info,
             graphics_mode,
-            graphics_request: None,
+            graphics_request: Cell::new(None),
         }
     }
 
     /// Stops the loop after the current callback. [`run`](crate::run) then returns.
-    pub fn quit(&mut self) {
-        self.quit = true;
+    pub fn quit(&self) {
+        self.quit.set(true);
     }
 
     /// Returns `true` once [`Context::quit`] was called.
     #[must_use]
     pub fn is_quitting(&self) -> bool {
-        self.quit
+        self.quit.get()
     }
 
     /// Length of one update step.
     #[must_use]
     pub fn dt(&self) -> Duration {
-        self.update_interval
+        self.update_interval.get()
     }
 
     /// Length of one update step in seconds, for physics.
     #[must_use]
     pub fn dt_secs(&self) -> f32 {
-        self.update_interval.as_secs_f32()
+        self.update_interval.get().as_secs_f32()
     }
 
     /// Game time: the sum of all update steps. It does not advance while paused.
@@ -128,7 +155,7 @@ impl Context {
     /// The current frame limit.
     #[must_use]
     pub fn fps_limit(&self) -> FpsLimit {
-        self.fps
+        self.fps.get()
     }
 
     /// Changes the frame limit, effective from the next frame.
@@ -136,16 +163,16 @@ impl Context {
     /// # Errors
     ///
     /// Returns [`ConfigError::InvalidFps`] for an out-of-range fixed limit.
-    pub fn set_fps_limit(&mut self, fps: FpsLimit) -> Result<(), ConfigError> {
+    pub fn set_fps_limit(&self, fps: FpsLimit) -> Result<(), ConfigError> {
         fps.validate()?;
-        self.fps = fps;
+        self.fps.set(fps);
         Ok(())
     }
 
     /// The number of updates per second.
     #[must_use]
     pub fn update_rate(&self) -> u32 {
-        self.update_rate
+        self.update_rate.get()
     }
 
     /// Changes the number of updates per second, effective from the next update.
@@ -153,23 +180,23 @@ impl Context {
     /// # Errors
     ///
     /// Returns [`ConfigError::InvalidUpdateRate`] for an out-of-range rate.
-    pub fn set_update_rate(&mut self, rate: u32) -> Result<(), ConfigError> {
+    pub fn set_update_rate(&self, rate: u32) -> Result<(), ConfigError> {
         config::validate_update_rate(rate)?;
-        self.update_rate = rate;
-        self.update_interval = config::interval(rate);
+        self.update_rate.set(rate);
+        self.update_interval.set(config::interval(rate));
         Ok(())
     }
 
     /// Returns `true` while updates are paused.
     #[must_use]
     pub fn is_paused(&self) -> bool {
-        self.paused
+        self.paused.get()
     }
 
     /// Pauses or resumes updates. Events and rendering continue while paused.
-    pub fn set_paused(&mut self, paused: bool) {
-        self.paused = paused;
-        self.paused_by_focus = false;
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.set(paused);
+        self.paused_by_focus.set(false);
     }
 
     /// Keyboard and mouse state.
@@ -204,12 +231,12 @@ impl Context {
     }
 
     /// Changes how images are shown, from the next frame on.
-    pub fn set_graphics_mode(&mut self, mode: GraphicsMode) {
-        self.graphics_request = Some(mode);
+    pub fn set_graphics_mode(&self, mode: GraphicsMode) {
+        self.graphics_request.set(Some(mode));
     }
 
     fn graphics_requests_or_current(&self) -> GraphicsMode {
-        self.graphics_request.unwrap_or(self.graphics_mode)
+        self.graphics_request.get().unwrap_or(self.graphics_mode)
     }
 
     /// Changes the key hold timeout used when the terminal does not report key releases.
@@ -226,7 +253,7 @@ impl Context {
     }
 
     pub(crate) fn update_interval(&self) -> Duration {
-        self.update_interval
+        self.update_interval.get()
     }
 
     pub(crate) fn set_capabilities(&mut self, capabilities: Capabilities) {
@@ -281,16 +308,16 @@ mod tests {
 
     #[test]
     fn graphics_mode_requests() {
-        let mut ctx = context();
+        let ctx = context();
         let sixel = GraphicsMode::Protocol(vnce_term::GraphicsProtocol::Sixel);
         ctx.set_graphics_mode(sixel);
         assert_eq!(ctx.graphics_mode(), sixel);
-        assert_eq!(ctx.graphics_request, Some(sixel));
+        assert_eq!(ctx.graphics_request.get(), Some(sixel));
     }
 
     #[test]
     fn quit_and_pause() {
-        let mut ctx = context();
+        let ctx = context();
         assert!(!ctx.is_quitting());
         ctx.quit();
         assert!(ctx.is_quitting());
