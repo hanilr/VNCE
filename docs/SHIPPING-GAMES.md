@@ -69,8 +69,13 @@ the display method under a key of its own for the window (see the examples'
 
 ## 5. Licenses
 
-Ship the license notices of the engine (`LICENSE`, `NOTICE`) with the game. A game built
-with the `window` feature also contains the JetBrains Mono font: include
+For the engine itself, a credit that players can see is enough: say that the game was
+made with VNCE (for example "Made with VNCE" in the credits, on the title screen, on the
+store page or in the documentation). The additional permission in `NOTICE` allows this;
+the engine's `LICENSE` and `NOTICE` may still be shipped, but they do not have to be.
+This covers only vnce: the libraries it depends on keep their own licenses, and their
+notices belong in the game's third-party licenses (for example with `cargo about`).
+A game built with the `window` feature also contains the JetBrains Mono font: include
 `crates/vnce-window/fonts/OFL.txt` (SIL Open Font License 1.1). The font may be shipped
 and sold with the game; it may not be sold on its own.
 

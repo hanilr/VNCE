@@ -177,3 +177,10 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 If you use, modify or redistribute this project, you must keep the [`NOTICE`](NOTICE) file
 and credit the original author, **Hakkı Anıl Ragıboğlu (hanilr)**, as required by the
 license.
+
+**Games made with vnce:** if you release a game or another application that uses vnce as
+a library, a visible credit such as "Made with VNCE" (in the credits, on the title screen,
+on the store page or in the documentation) is enough; you do not have to ship `NOTICE` or
+the license text with it. This additional permission is written in [`NOTICE`](NOTICE). It
+does not cover redistributing vnce itself, and third-party parts of a game keep their own
+licenses (see [`docs/SHIPPING-GAMES.md`](docs/SHIPPING-GAMES.md)).

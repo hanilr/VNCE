@@ -4,6 +4,22 @@ Copyright 2026 Hakkı Anıl Ragıboğlu (hanilr)
 This product includes software developed by Hakkı Anıl Ragıboğlu (hanilr)
 as part of the Variation ecosystem.
 
-Licensed under the Apache License, Version 2.0. Any redistribution or derivative
-work must retain this NOTICE file and the attribution above, as required by
-Section 4(d) of the Apache License, Version 2.0.
+Licensed under the Apache License, Version 2.0. Except as permitted below, any
+redistribution or derivative work must retain this NOTICE file and the attribution
+above, as required by Section 4(d) of the Apache License, Version 2.0.
+
+Additional permission for games and applications
+
+As an additional permission to the Apache License, Version 2.0, the copyright holder
+grants the following. If you distribute a game or another application that uses vnce
+as a library, in compiled form and with or without changes to vnce, you do not have to
+include this NOTICE file or a copy of the license with it. A credit that players can
+see, saying that the game was made with VNCE (for example "Made with VNCE" in the
+credits, on the title screen, on the store page or in the documentation), is enough.
+
+This permission does not cover distributing vnce itself or its source code, on its own
+or as part of another library, engine or framework; such distributions must keep this
+NOTICE file as described above. It covers only the copyright in vnce: third-party
+components inside a game keep their own license terms (for example the JetBrains Mono
+font of the `window` feature, under the SIL Open Font License 1.1, and the crates vnce
+depends on).

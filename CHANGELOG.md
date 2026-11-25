@@ -227,6 +227,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Licensing: `NOTICE` adds a permission to the Apache License 2.0 for games and other
+  applications that use vnce as a library: a visible "Made with VNCE" credit is enough,
+  and `NOTICE` and the license text do not have to ship with them. Redistributing vnce
+  itself still keeps `NOTICE`. The README and the shipping guide explain it.
 - `Gpu::new` returns the process's GPU when there already is one (one device for the
   game and its window). In a native window, images are drawn under the cells: text,
   menus and popups stay visible over a picture, and cells with the default background let
