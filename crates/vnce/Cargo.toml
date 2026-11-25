@@ -68,6 +68,14 @@ required-features = ["game", "ui"]
 name = "lantern"
 required-features = ["game", "ui"]
 
+# The showcase game: GPU scenes with the `gpu` feature, sound with `audio`. Its smoke test
+# runs with `cargo test`.
+[[example]]
+name = "relay"
+path = "examples/relay/main.rs"
+required-features = ["game", "ui"]
+test = true
+
 [[example]]
 name = "sfx"
 required-features = ["audio", "ui"]

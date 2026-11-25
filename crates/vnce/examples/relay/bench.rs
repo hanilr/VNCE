@@ -1,0 +1,160 @@
+//! `--bench`: plays the station without a screen, walking a fixed route, and prints the
+//! time and output per frame for several display methods.
+
+use std::cell::Cell;
+use std::io;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
+use vnce::vnce_core::Size;
+use vnce::vnce_game::{SaveFile, SceneStack};
+use vnce::vnce_raster::PixelMode;
+use vnce::vnce_runtime::{Context, FpsLimit, Game, RunConfig, ScriptedDriver, run_with};
+use vnce::vnce_term::{
+    Backend, Capabilities, Event, Frame, GraphicsMode, GraphicsProtocol, KeyCode, KeyEvent,
+    KeyEventKind, KeyModifiers, Terminal, TerminalOptions,
+};
+
+use crate::Shared;
+use crate::play::Play;
+
+/// Runs a game for a fixed number of frames, then quits.
+pub struct Limited<G> {
+    pub game: G,
+    pub frames: u64,
+}
+
+impl<G: Game> Game for Limited<G> {
+    fn init(&mut self, ctx: &mut Context) {
+        self.game.init(ctx);
+    }
+
+    fn event(&mut self, ctx: &mut Context, event: &Event) {
+        self.game.event(ctx, event);
+    }
+
+    fn update(&mut self, ctx: &mut Context) {
+        self.game.update(ctx);
+    }
+
+    fn render(&mut self, ctx: &Context, frame: &mut Frame<'_>) {
+        self.game.render(ctx, frame);
+        if ctx.frame_count() + 1 >= self.frames {
+            ctx.quit();
+        }
+    }
+}
+
+/// A terminal that throws the output away and counts its bytes.
+struct Sink {
+    size: Size,
+    bytes: Rc<Cell<usize>>,
+}
+
+impl Backend for Sink {
+    fn size(&self) -> io::Result<Size> {
+        Ok(self.size)
+    }
+
+    fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.bytes.set(self.bytes.get() + bytes.len());
+        std::hint::black_box(bytes);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn enter(&mut self, _options: &TerminalOptions) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn leave(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A route through the atrium and two wings: (key, seconds held).
+pub const ROUTE: [(KeyCode, u64); 8] = [
+    (KeyCode::Up, 1200),
+    (KeyCode::Up, 1800),
+    (KeyCode::Left, 1500),
+    (KeyCode::Down, 1400),
+    (KeyCode::Right, 2400),
+    (KeyCode::Down, 2600),
+    (KeyCode::Right, 1800),
+    (KeyCode::Up, 1000),
+];
+
+/// Holds the keys of [`ROUTE`] one after another, starting at `start` milliseconds.
+pub fn walk(driver: &mut ScriptedDriver, start: u64) {
+    let mut at = start;
+    for (code, hold) in ROUTE {
+        let key = |kind| {
+            Event::Key(KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+                kind,
+            })
+        };
+        driver.push_event(Duration::from_millis(at), key(KeyEventKind::Press));
+        driver.push_event(Duration::from_millis(at + hold), key(KeyEventKind::Release));
+        at += hold + 100;
+    }
+}
+
+pub fn run(gpu: bool) {
+    const FRAMES: u64 = 600;
+    let modes = [
+        GraphicsMode::Cells(PixelMode::HalfBlock),
+        GraphicsMode::Cells(PixelMode::Sextant),
+        GraphicsMode::Cells(PixelMode::Braille),
+        GraphicsMode::Protocol(GraphicsProtocol::Kitty),
+        GraphicsMode::Protocol(GraphicsProtocol::Sixel),
+    ];
+    println!("Relay, {FRAMES} frames at 200×60 cells, walking through the station:");
+    let mut pictures = String::new();
+    for mode in modes {
+        let shared = Shared::new(SaveFile::new(), gpu, false);
+        pictures = shared.visuals.borrow().describe();
+        let mut game = Limited {
+            game: SceneStack::new(Play::new(7), shared),
+            frames: FRAMES,
+        };
+        let bytes = Rc::new(Cell::new(0));
+        let capabilities = Capabilities {
+            key_release_events: true,
+            ..Capabilities::default()
+        };
+        let backend = Sink {
+            size: Size::new(200, 60),
+            bytes: Rc::clone(&bytes),
+        };
+        let Ok(mut terminal) = Terminal::new(backend, capabilities) else {
+            continue;
+        };
+        terminal.set_graphics_mode(mode);
+        let mut driver = ScriptedDriver::new();
+        walk(&mut driver, 200);
+        let config = RunConfig {
+            fps: FpsLimit::Fixed(60),
+            ..RunConfig::default()
+        };
+        let start = Instant::now();
+        if let Err(error) = run_with(&mut game, config, terminal, driver) {
+            println!("  {mode}: {error}");
+            continue;
+        }
+        let elapsed = start.elapsed();
+        let stats = game.game.data().stats.borrow();
+        println!(
+            "  {:<12} {:>6.2} ms per frame (render {:>5.2} ms) {:>9.1} KB per frame",
+            mode.to_string(),
+            elapsed.as_secs_f64() * 1000.0 / FRAMES as f64,
+            stats.average_render(),
+            bytes.get() as f64 / FRAMES as f64 / 1000.0,
+        );
+    }
+    println!("Pictures: {pictures}");
+}
