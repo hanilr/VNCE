@@ -43,6 +43,10 @@ pub struct TerminalInfo {
     pub cell_pixels: Option<(u16, u16)>,
     /// Size of the text area in pixels, `(width, height)`.
     pub window_pixels: Option<(u32, u32)>,
+    /// Not a terminal but a native window that draws frames itself (see
+    /// [`Backend::present`]) and shows images in its real pixels
+    /// ([`GraphicsMode::Native`](crate::GraphicsMode::Native)).
+    pub native_window: bool,
 }
 
 impl TerminalInfo {

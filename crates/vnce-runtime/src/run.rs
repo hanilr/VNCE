@@ -208,6 +208,11 @@ fn handle_event<G: Game>(
     }
     ctx.input.handle_event(event, now);
     game.event(ctx, event);
+    // A window's close button: the game saw the event (to save, for example) and the loop
+    // ends.
+    if *event == Event::Closed {
+        ctx.quit();
+    }
 }
 
 fn is_ctrl_c(event: &Event) -> bool {
@@ -437,6 +442,16 @@ mod tests {
         };
         run_probe(&mut probe, config, driver, true);
         assert_eq!(probe.updates, 30);
+        assert_eq!(probe.events, 1);
+    }
+
+    #[test]
+    fn closing_the_window_quits_after_the_game_saw_it() {
+        let mut driver = ScriptedDriver::new();
+        driver.push_event(MS * 100, Event::Closed);
+        let mut probe = Probe::new(Duration::from_secs(10));
+        run_probe(&mut probe, RunConfig::default(), driver, true);
+        assert!(probe.updates <= 7, "{}", probe.updates);
         assert_eq!(probe.events, 1);
     }
 

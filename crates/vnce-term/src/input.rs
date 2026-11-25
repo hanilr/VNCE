@@ -36,6 +36,8 @@ pub enum Event {
     /// Text was pasted.
     /// Requires [`TerminalOptions::bracketed_paste`](crate::TerminalOptions).
     Paste(String),
+    /// The window was asked to close (its close button). Only native windows send it.
+    Closed,
 }
 
 /// A keyboard event.

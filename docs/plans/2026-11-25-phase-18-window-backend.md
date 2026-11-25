@@ -30,9 +30,8 @@ native window instead of writing escape sequences:
   window focus and resize mapped to the existing `Event` types; gamepads as a later step.
 - Window: title, icon, size in cells or pixels, fullscreen toggle, scaling (whole cells,
   sharp pixels), optional effects (CRT / scanlines) as a final shader pass.
-- `vnce_runtime::run` gains a way to choose the window (for example a `RunConfig` option
-  or a `--window` flag that examples pass through), so a game switches with no code
-  change.
+- A game chooses the window with no code change beyond calling `vnce::run`: built with
+  the `window` feature it opens in a window (see the decisions below).
 
 ## Decisions (approved 2026-11-25)
 

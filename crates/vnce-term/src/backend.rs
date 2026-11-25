@@ -12,6 +12,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use vnce_core::{Buffer, Color, Modifiers, Size, Style};
 
+use crate::native::FrameView;
 use crate::query::{QUERY_TIMEOUT, TerminalInfo};
 use crate::terminal::TerminalOptions;
 
@@ -83,6 +84,19 @@ pub trait Backend {
     /// The default implementation returns an empty [`TerminalInfo`].
     fn terminal_info(&self) -> TerminalInfo {
         TerminalInfo::default()
+    }
+
+    /// Draws a finished frame directly, for backends that are not terminals (a native
+    /// window): returns `Some` when the frame was taken, and the [`Terminal`] then writes
+    /// no escape sequences for it. Called before every write.
+    ///
+    /// The default implementation returns `None` (the frame is written as text and escape
+    /// sequences).
+    ///
+    /// [`Terminal`]: crate::Terminal
+    fn present(&mut self, frame: &FrameView<'_>) -> Option<io::Result<()>> {
+        let _ = frame;
+        None
     }
 }
 

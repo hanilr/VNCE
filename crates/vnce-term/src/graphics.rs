@@ -26,6 +26,8 @@ pub enum GraphicsMode {
     Protocol(GraphicsProtocol),
     /// Characters and colors, with a pixel mode (works everywhere).
     Cells(PixelMode),
+    /// Real pixels drawn directly by a native window (no protocol, no encoding).
+    Native,
 }
 
 impl GraphicsMode {
@@ -50,13 +52,23 @@ impl GraphicsMode {
         capabilities: &Capabilities,
     ) -> Self {
         let cells = Self::Cells(PixelMode::detect(capabilities.color_depth));
+        let best = if info.native_window {
+            Self::Native
+        } else {
+            cells
+        };
         if let Some(value) = env("VNCE_GRAPHICS") {
             if value.trim().eq_ignore_ascii_case("cells") {
                 return cells;
             }
-            if let Ok(mode) = value.parse() {
-                return mode;
+            if let Ok(mode) = value.parse::<Self>() {
+                if mode != Self::Native || info.native_window {
+                    return mode;
+                }
             }
+        }
+        if info.native_window {
+            return best;
         }
         Self::protocols(&env, info, *capabilities)
             .first()
@@ -68,10 +80,14 @@ impl GraphicsMode {
     #[must_use]
     pub fn available(info: &TerminalInfo, capabilities: &Capabilities) -> Vec<Self> {
         let env = |name: &str| std::env::var(name).ok();
-        let mut modes: Vec<Self> = Self::protocols(&env, info, *capabilities)
-            .into_iter()
-            .map(Self::Protocol)
-            .collect();
+        let mut modes: Vec<Self> = if info.native_window {
+            vec![Self::Native]
+        } else {
+            Self::protocols(&env, info, *capabilities)
+                .into_iter()
+                .map(Self::Protocol)
+                .collect()
+        };
         modes.extend(
             PixelMode::available(capabilities.color_depth)
                 .into_iter()
@@ -137,6 +153,7 @@ impl GraphicsMode {
             Self::Protocol(GraphicsProtocol::Sixel) => "sixel",
             Self::Protocol(GraphicsProtocol::Iterm2) => "iterm2",
             Self::Cells(mode) => mode.name(),
+            Self::Native => "window",
         }
     }
 
@@ -156,12 +173,14 @@ impl fmt::Display for GraphicsMode {
 impl FromStr for GraphicsMode {
     type Err = vnce_raster::ParsePixelModeError;
 
-    /// Parses `kitty`, `sixel`, `iterm2` or a pixel mode name (case-insensitive).
+    /// Parses `kitty`, `sixel`, `iterm2`, `window` or a pixel mode name
+    /// (case-insensitive).
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_lowercase().as_str() {
             "kitty" => Ok(Self::Protocol(GraphicsProtocol::Kitty)),
             "sixel" => Ok(Self::Protocol(GraphicsProtocol::Sixel)),
             "iterm2" | "iterm" => Ok(Self::Protocol(GraphicsProtocol::Iterm2)),
+            "window" | "native" => Ok(Self::Native),
             other => other.parse().map(Self::Cells),
         }
     }

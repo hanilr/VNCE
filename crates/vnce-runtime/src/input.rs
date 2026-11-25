@@ -185,7 +185,7 @@ impl InputState {
                 }
             }
             Event::FocusLost => self.release_all(),
-            Event::Resize(_) | Event::FocusGained | Event::Paste(_) => {}
+            Event::Resize(_) | Event::FocusGained | Event::Paste(_) | Event::Closed => {}
         }
     }
 

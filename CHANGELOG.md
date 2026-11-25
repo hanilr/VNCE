@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frames for native windows (`vnce_term`): `Backend::present` receives a finished frame
+  (`FrameView`: the cell buffer and the images in drawing order, each marked when it
+  changed) and the terminal then writes no escape sequences. `GraphicsMode::Native`
+  ("window") shows images in the window's real pixels; `Frame::draw_texture` shows an
+  `ExternalImage` (for example a GPU texture) without copying it, when
+  `Frame::accepts_textures` says so. `TerminalInfo::native_window` marks such a backend.
+  `Event::Closed` (a window's close button) reaches the game, then the runtime quits.
 - `vnce_gpu` lighting and fog: `MeshRenderer::set_scene` takes a `MeshScene` with a sun
   and ambient light (`Light`) and distance fog (`Fog`, whose alpha can fade far meshes
   out over a sky behind the image). Vertices with a normal are lit (normals are turned
@@ -190,6 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Event` has a `Closed` variant, `GraphicsMode` a `Native` variant and
+  `TerminalInfo` a `native_window` field; exhaustive matches and struct literals must
+  add them.
 - **Breaking:** `vnce_gpu::Vertex` has a `normal` field (between `position` and `color`)
   and `MeshDraw` a `model` matrix (model to world space, for light and fog). Code that
   builds them as struct literals must add the field; `Vertex::new` (unlit) still works and

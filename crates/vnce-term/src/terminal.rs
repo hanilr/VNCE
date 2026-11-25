@@ -10,6 +10,7 @@ use crate::ansi::{self, StyleState};
 use crate::backend::{Backend, CrosstermBackend};
 use crate::capabilities::Capabilities;
 use crate::graphics::{GraphicsMode, GraphicsProtocol};
+use crate::native::{ExternalImage, FrameView, NativeImage, NativeRequest};
 use crate::query::TerminalInfo;
 
 /// Which terminal modes are enabled by [`Terminal::enter`].
@@ -139,6 +140,9 @@ pub struct Frame<'a> {
     placed: &'a [PlacedImage],
     spare: &'a mut Vec<Canvas>,
     scale_quality: ScaleQuality,
+    /// Images of this frame in [`GraphicsMode::Native`], and those of the last frame.
+    native: &'a mut Vec<NativeRequest>,
+    native_shown: &'a [NativeImage],
 }
 
 impl Frame<'_> {
@@ -189,7 +193,67 @@ impl Frame<'_> {
                 });
                 self.images.push(ImageRequest { area, canvas: copy });
             }
+            GraphicsMode::Native => {
+                if area.is_empty() || canvas.width() == 0 || canvas.height() == 0 {
+                    return;
+                }
+                let on_screen = self.native_shown.iter().any(|shown| {
+                    matches!(shown, NativeImage::Pixels { area: a, canvas: c, .. }
+                        if *a == area && same_pixels(c, canvas))
+                });
+                // A later image in the same area replaces an earlier one.
+                if let Some(index) = self.native.iter().position(|r| r.area() == area) {
+                    if let NativeRequest::Pixels {
+                        canvas: Some(earlier),
+                        ..
+                    } = self.native.remove(index)
+                    {
+                        recycle(self.spare, Some(earlier));
+                    }
+                }
+                let copy = (!on_screen).then(|| match self.spare.pop() {
+                    Some(mut spare) => {
+                        spare.clone_from(canvas);
+                        spare
+                    }
+                    None => canvas.clone(),
+                });
+                self.native
+                    .push(NativeRequest::Pixels { area, canvas: copy });
+            }
         }
+    }
+
+    /// Whether [`Frame::draw_texture`] can show pictures that live outside the CPU (a
+    /// native window in [`GraphicsMode::Native`]). When it cannot, read the picture into a
+    /// canvas and use [`Frame::draw_image`].
+    #[must_use]
+    pub fn accepts_textures(&self) -> bool {
+        self.graphics == GraphicsMode::Native
+    }
+
+    /// Shows `image` (for example a GPU texture) scaled to fill `area`, without copying
+    /// its pixels. Returns `false` and draws nothing when the frame cannot show it (see
+    /// [`Frame::accepts_textures`]).
+    pub fn draw_texture(&mut self, area: Rect, image: ExternalImage) -> bool {
+        if !self.accepts_textures() {
+            return false;
+        }
+        let area = self.image_area(area);
+        if area.is_empty() {
+            return true;
+        }
+        if let Some(index) = self.native.iter().position(|r| r.area() == area) {
+            if let NativeRequest::Pixels {
+                canvas: Some(earlier),
+                ..
+            } = self.native.remove(index)
+            {
+                recycle(self.spare, Some(earlier));
+            }
+        }
+        self.native.push(NativeRequest::External { area, image });
+        true
     }
 
     /// How [`Frame::draw_image`] shows images.
@@ -222,7 +286,7 @@ impl Frame<'_> {
         let area = self.image_area(area);
         let (columns, rows) = match self.graphics {
             GraphicsMode::Cells(mode) => mode.cell_size(),
-            GraphicsMode::Protocol(_) => {
+            GraphicsMode::Protocol(_) | GraphicsMode::Native => {
                 (u32::from(self.cell_pixels.0), u32::from(self.cell_pixels.1))
             }
         };
@@ -247,7 +311,7 @@ impl Frame<'_> {
                 let (width, height) = self.cell_pixels;
                 (f32::from(width) / columns as f32) / (f32::from(height) / rows as f32)
             }
-            GraphicsMode::Protocol(_) => 1.0,
+            GraphicsMode::Protocol(_) | GraphicsMode::Native => 1.0,
         }
     }
 
@@ -359,6 +423,10 @@ struct ImageState {
     sixel: protocol::sixel::Encoder,
     /// How images are scaled to the pixels or cells of their area.
     scale_quality: ScaleQuality,
+    /// Images requested in the frame being drawn in [`GraphicsMode::Native`].
+    native_requests: Vec<NativeRequest>,
+    /// Images of the last frame given to [`Backend::present`].
+    native: Vec<NativeImage>,
 }
 
 impl Terminal<CrosstermBackend> {
@@ -420,6 +488,8 @@ impl<B: Backend> Terminal<B> {
                 defer: false,
                 sixel: protocol::sixel::Encoder::new(),
                 scale_quality: ScaleQuality::default(),
+                native_requests: Vec::new(),
+                native: Vec::new(),
             },
         })
     }
@@ -579,6 +649,7 @@ impl<B: Backend> Terminal<B> {
     {
         self.autoresize()?;
         self.images.requests.clear();
+        self.images.native_requests.clear();
         let cell_pixels = self.cell_pixels();
         let mut frame = Frame {
             buffer: &mut self.buffers[self.current],
@@ -589,6 +660,8 @@ impl<B: Backend> Terminal<B> {
             placed: &self.images.placed,
             spare: &mut self.images.spare,
             scale_quality: self.images.scale_quality,
+            native: &mut self.images.native_requests,
+            native_shown: &self.images.native,
         };
         render(&mut frame);
         self.flush()?;
@@ -604,6 +677,10 @@ impl<B: Backend> Terminal<B> {
     ///
     /// Returns an error if the backend cannot report its size.
     pub fn autoresize(&mut self) -> io::Result<()> {
+        // A window's cells change size with its scale factor and font size.
+        if self.info.native_window {
+            self.info = self.backend.terminal_info();
+        }
         let size = self.backend.size()?;
         if size != self.size() {
             self.resize(size);
@@ -660,8 +737,30 @@ impl<B: Backend> Terminal<B> {
         self.frame_count
     }
 
+    /// Gives the frame to a backend that draws it itself ([`Backend::present`]). Returns
+    /// `None` when the backend wants text and escape sequences instead.
+    fn present(&mut self) -> Option<io::Result<()>> {
+        let requests = std::mem::take(&mut self.images.native_requests);
+        let spare = &mut self.images.spare;
+        NativeImage::update(&mut self.images.native, requests, |canvas| {
+            recycle(spare, Some(canvas));
+        });
+        let view = FrameView {
+            buffer: &self.buffers[self.current],
+            images: self.images.native.iter().map(NativeImage::view).collect(),
+            full_redraw: self.full_redraw,
+            cell_pixels: self.cell_pixels(),
+        };
+        let result = self.backend.present(&view)?;
+        self.full_redraw = false;
+        Some(result)
+    }
+
     /// Writes the difference between the current and the previous frame.
     fn flush(&mut self) -> io::Result<()> {
+        if let Some(result) = self.present() {
+            return result;
+        }
         let capabilities = self.capabilities;
         let cell_pixels = self.cell_pixels();
         // Tall Sixel pixels need an even cell height, so patches start on a whole row.
