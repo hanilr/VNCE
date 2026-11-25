@@ -303,13 +303,15 @@ pub fn is_shallow(island: &Island, (x, y): (usize, usize)) -> bool {
 }
 
 /// What to include when drawing a tile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Layer {
     /// Everything: sides, top with shadows, prop.
     Full,
-    /// Only what stands up and hides things behind it: sides, top and tall props, without
-    /// soft (half transparent) parts, so drawing it twice changes nothing.
-    Occluder,
+    /// Only what can hide something standing at height `.0` (in levels) behind the tile:
+    /// sides and top when they rise above it, and props that stand up. Shallow sea and
+    /// small plants are left out. Every part is opaque and drawn exactly as in `Full`, so
+    /// drawing it again over the same tile changes nothing.
+    Above(f32),
 }
 
 /// Draws one tile: its visible cliff sides, its top and its prop (not the beacon, which is
@@ -329,14 +331,20 @@ pub fn draw_tile(
         }
         return;
     }
-    draw_sides(canvas, view, island, tile);
-    draw_top(canvas, view, island, tile, layer == Layer::Full);
+    let rises = match layer {
+        Layer::Full => true,
+        Layer::Above(height) => corners(island, tile).iter().any(|&h| h > height + 0.05),
+    };
+    if rises {
+        draw_sides(canvas, view, island, tile);
+        draw_top(canvas, view, island, tile);
+    }
     if let Some(prop) = island.prop[i].filter(|&p| p != Prop::Beacon) {
-        if layer == Layer::Full || prop.is_tall() || prop == Prop::Boulder {
+        if layer == Layer::Full || prop.blocks() {
             if let Some(sprite) = sprites.prop(prop) {
                 let h = f32::from(island.level_at(tile));
                 let at = view.project(tile.0 as f32 + 0.5, tile.1 as f32 + 0.5, h);
-                // Trees lean towards the light a little differently per tile.
+                // Plants and rocks face either way, differently per tile.
                 let flip = hash(tile.0 as i32, tile.1 as i32 + 99) > 0.5;
                 stand(
                     canvas,
@@ -407,8 +415,11 @@ fn draw_sides(canvas: &mut Canvas, view: &View, island: &Island, tile: (usize, u
         let light = nx * SUN.0 + ny * SUN.1;
         let color = scale(base, 0.9 + light * 0.25);
         let (pa, pb) = (points[a], points[b]);
-        let top_a = view.project(pa.0, pa.1, ha);
-        let top_b = view.project(pb.0, pb.1, hb);
+        // The side reaches a pixel into the top (drawn after it), so no gap shows
+        // between them.
+        let raise = |(x, y): (f32, f32)| (x, y - 1.0);
+        let top_a = raise(view.project(pa.0, pa.1, ha));
+        let top_b = raise(view.project(pb.0, pb.1, hb));
         let low_a = view.project(pa.0, pa.1, na.min(ha));
         let low_b = view.project(pb.0, pb.1, nb.min(hb));
         canvas.fill_triangle(top_a, top_b, low_b, color);
@@ -445,13 +456,7 @@ fn draw_sides(canvas: &mut Canvas, view: &View, island: &Island, tile: (usize, u
     clippy::too_many_lines,
     reason = "one pass over the pixels keeps texture, steps and shadows together"
 )]
-fn draw_top(
-    canvas: &mut Canvas,
-    view: &View,
-    island: &Island,
-    tile: (usize, usize),
-    shadows: bool,
-) {
+fn draw_top(canvas: &mut Canvas, view: &View, island: &Island, tile: (usize, usize)) {
     let i = index(tile.0, tile.1);
     let level = island.level[i];
     let ground = island.ground[i];
@@ -487,7 +492,7 @@ fn draw_top(
     let base = ground_color(ground, level);
     // Shadows falling on this tile: props here and on neighbors of the same level.
     let mut casters: Vec<(f32, f32, f32)> = Vec::new();
-    if shadows && stair.is_none() {
+    if stair.is_none() {
         for dy in -1..=1_i32 {
             for dx in -1..=1_i32 {
                 let (nx, ny) = (tile.0 as i32 + dx, tile.1 as i32 + dy);

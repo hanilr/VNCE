@@ -309,9 +309,17 @@ impl Island {
     }
 
     /// A stair on `tile` climbing towards `dir` needs a free tile of its own level behind
-    /// it, and must not sit next to another stair.
+    /// it, no higher ground beside it (its sides stay open), and must not sit next to
+    /// another stair.
     fn stair_fits(&self, tile: (usize, usize), dir: Dir) -> bool {
         let level = self.level_at(tile);
+        let open_sides = Dir::ALL
+            .iter()
+            .filter(|&&d| d != dir && d != opposite(dir))
+            .all(|d| neighbor(tile, d.step()).is_none_or(|n| self.level_at(n) <= level));
+        if !open_sides {
+            return false;
+        }
         let behind = neighbor(tile, opposite(dir).step());
         behind.is_some_and(|b| self.level_at(b) == level && self.stair[index(b.0, b.1)].is_none())
             && self.stair[index(tile.0, tile.1)].is_none()
