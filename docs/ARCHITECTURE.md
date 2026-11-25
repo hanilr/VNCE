@@ -168,7 +168,9 @@ converted through the same pixel modes. Enabled with a `gpu` feature flag.
   the GPU renders exactly the pixels that are shown, with the right aspect ratio.
 - Helpers: `ShaderQuad` (a full-screen shader from one WGSL `shade` function, validated
   with `naga` for readable errors) and `MeshRenderer` (colored meshes with a depth buffer
-  and MSAA, lowered to what the adapter supports), with a small `Mat4` type. Users can
+  and MSAA, lowered to what the adapter supports, lit by a sun and ambient light and faded
+  into distance fog per pixel in world space; vertices without a normal stay unlit), with
+  a small `Mat4` type and vector helpers. Users can
   also write their own `wgpu` passes; the `wgpu` crate is re-exported.
 
 ### Quality

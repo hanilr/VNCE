@@ -1,7 +1,7 @@
 # Plan: Phase 17 — Lit meshes and the 3D flight showcase "Glide"
 
 **Date:** 2026-11-25
-**Status:** Approved, not started (the user chose a flight game, approved the engine
+**Status:** Approved, in progress — step 2 done (the user chose a flight game, approved the engine
 extension and wants a CPU fallback; the whole plan of Phases 15–17 was approved on
 2026-11-25; after Phase 16 the user agreed to the wider scope below, so Glide, like Relay
 and Isle, shows everything it can, and asked to start it in a later session)
@@ -96,6 +96,15 @@ None.
   parameter uniform is an engine change to plan and approve separately; otherwise the sky
   is drawn for a fixed set of sun heights.
 - Engine gaps found while building the game are planned and approved separately.
+
+## Progress
+
+- Step 2 done: `Vertex::normal`, `Vertex::lit`, `flat_shaded`, `MeshDraw::model` /
+  `MeshDraw::new`, `MeshScene` with `Light` and `Fog` (`MeshRenderer::set_scene`), public
+  vector helpers in `math`; GPU tests for light and fog; `gpu_cube` (`L` key) and Relay's
+  core are lit. Fog fades its alpha too, so Glide can fade terrain out over the sky (the
+  target then holds premultiplied colors in partly transparent pixels; un-premultiply or
+  composite accordingly in step 6).
 
 ## Resume here (next session)
 

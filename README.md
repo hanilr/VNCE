@@ -53,7 +53,8 @@ For GPU rendering, enable the `gpu` feature (`vnce = { version = "0.1",
 features = ["gpu"] }`): `vnce_gpu` renders with `wgpu` (Vulkan, DX12, Metal or OpenGL, with a
 software fallback) into a `RenderTarget` that is read back into a canvas and shown like any
 other image. It comes with a full-screen shader helper (`ShaderQuad`) and a 3D mesh renderer
-(`MeshRenderer`); your own `wgpu` render passes work too.
+(`MeshRenderer`, with sun and ambient light and distance fog); your own `wgpu` render passes
+work too.
 
 For interfaces, `vnce_ui` (feature `ui`, on by default) has a small set of widgets: `Layout`,
 `Paragraph` (wrapping, alignment, `…`), `Block` (borders and titles), `Gauge`, `List` (menus),

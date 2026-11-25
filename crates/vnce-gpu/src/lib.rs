@@ -7,8 +7,9 @@
 //! - [`RenderTarget`]: an offscreen image to render to with your own `wgpu` render
 //!   passes, read back into a [`vnce_raster::Canvas`] with [`RenderTarget::read_into`].
 //! - [`ShaderQuad`]: a full-screen fragment shader from one WGSL function.
-//! - [`MeshRenderer`]: colored 3D meshes with depth testing and anti-aliasing, with a
-//!   small [`Mat4`] type for transforms and cameras.
+//! - [`MeshRenderer`]: colored 3D meshes with depth testing and anti-aliasing, lit by a
+//!   sun and ambient light ([`Light`]) and faded into distance fog ([`Fog`]), with a
+//!   small [`Mat4`] type (and vector helpers in [`math`]) for transforms and cameras.
 //!
 //! The canvas is then shown like any other: with `Frame::draw_image` (real pixels through
 //! Kitty, Sixel or iTerm2, or cells) or `Canvas::render` (cells). Use
@@ -42,7 +43,9 @@ mod target;
 pub use error::GpuError;
 pub use gpu::{Gpu, GpuInfo, GpuOptions, Power};
 pub use math::{Mat4, Vec3};
-pub use mesh::{Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, Vertex};
+pub use mesh::{
+    Fog, Light, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, MeshScene, Vertex, flat_shaded,
+};
 pub use shader::ShaderQuad;
 pub use target::{Readback, RenderTarget};
 pub use wgpu;

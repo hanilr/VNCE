@@ -1,6 +1,6 @@
 //! Spinning 3D cubes over a checkered floor, rendered on the GPU with
-//! `vnce_gpu::MeshRenderer` (depth buffer, multisample anti-aliasing) and shown with cells
-//! or a graphics protocol.
+//! `vnce_gpu::MeshRenderer` (depth buffer, multisample anti-aliasing, a sun with ambient
+//! light, and distance fog) and shown with cells or a graphics protocol.
 //!
 //! Run with:
 //!
@@ -9,8 +9,8 @@
 //! cargo run --release --features gpu --example gpu_cube -- --bench   # GPU timings
 //! ```
 //!
-//! `G`: next display method · `M`: anti-aliasing on / off · `P`: pipelined readback ·
-//! `Esc` / `Q`: quit.
+//! `G`: next display method · `M`: anti-aliasing on / off · `L`: light and fog on / off ·
+//! `P`: pipelined readback · `Esc` / `Q`: quit.
 //!
 //! The demo starts with cells: sending a full-screen Sixel image 60 times per second is
 //! too slow for most terminals. Kitty handles it much better.
@@ -29,8 +29,8 @@ use std::time::{Duration, Instant};
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_gpu::{
-    Gpu, GpuOptions, Mat4, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, Readback,
-    RenderTarget, Vec3, Vertex,
+    Fog, Gpu, GpuOptions, Light, Mat4, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions,
+    MeshScene, Readback, RenderTarget, Vec3, Vertex,
 };
 use vnce::vnce_raster::{Canvas, Rgba};
 use vnce::vnce_runtime::{self, Context, Game, RunConfig};
@@ -59,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas: Canvas::new(0, 0),
         modes: Vec::new(),
         gpu_time: Duration::ZERO,
+        lit: true,
         error: None,
     };
     vnce_runtime::run(&mut demo, RunConfig::default())?;
@@ -87,7 +88,7 @@ fn cube(gpu: &Gpu, colors: [Rgba; 6]) -> Mesh {
         let base = vertices.len() as u32;
         for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
             let position = [0, 1, 2].map(|i| 0.5 * (normal[i] + su * u[i] + sv * v[i]));
-            vertices.push(Vertex::new(position, color));
+            vertices.push(Vertex::lit(position, normal, color));
         }
         indices.extend([0, 1, 2, 0, 2, 3].map(|i| base + i));
     }
@@ -109,7 +110,7 @@ fn floor(gpu: &Gpu, tiles: u32) -> Mesh {
             let (x, z) = (column as f32 - half, row as f32 - half);
             let base = vertices.len() as u32;
             for (dx, dz) in [(0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)] {
-                vertices.push(Vertex::new([x + dx, 0.0, z + dz], color));
+                vertices.push(Vertex::lit([x + dx, 0.0, z + dz], [0.0, 1.0, 0.0], color));
             }
             indices.extend([0, 1, 2, 0, 2, 3].map(|i| base + i));
         }
@@ -153,35 +154,56 @@ impl Scene {
         }
     }
 
+    /// The camera position at time `t` (seconds).
+    fn eye(t: f32) -> Vec3 {
+        [6.0 * (t * 0.15).sin(), 3.0, 6.0 * (t * 0.15).cos()]
+    }
+
+    /// The light and fog at time `t`: a sun slowly circling the scene, and fog that hides
+    /// the far edge of the floor in the background color.
+    fn lighting(t: f32, lit: bool) -> MeshScene {
+        if !lit {
+            return MeshScene::default();
+        }
+        MeshScene {
+            light: Some(Light {
+                direction: [(t * 0.3).cos(), 1.2, (t * 0.3).sin()],
+                ..Light::default()
+            }),
+            fog: Some(Fog {
+                color: BACKGROUND,
+                start: 6.0,
+                end: 14.0,
+            }),
+            camera: Self::eye(t),
+        }
+    }
+
     /// The draws for time `t` (seconds) and an image `aspect` ratio (width / height).
     fn draws(&self, t: f32, aspect: f32) -> Vec<MeshDraw<'_>> {
-        let eye = [6.0 * (t * 0.15).sin(), 3.0, 6.0 * (t * 0.15).cos()];
         let camera = Mat4::perspective(50_f32.to_radians(), aspect, 0.1, 100.0)
-            * Mat4::look_at(eye, [0.0, 0.8, 0.0], [0.0, 1.0, 0.0]);
+            * Mat4::look_at(Self::eye(t), [0.0, 0.8, 0.0], [0.0, 1.0, 0.0]);
         let mut draws = vec![
-            MeshDraw {
-                mesh: &self.floor,
-                transform: camera,
-            },
-            MeshDraw {
-                mesh: &self.big,
-                transform: camera
-                    * Mat4::translation([0.0, 1.4 + 0.2 * (t * 1.7).sin(), 0.0])
+            MeshDraw::new(&self.floor, camera, Mat4::IDENTITY),
+            MeshDraw::new(
+                &self.big,
+                camera,
+                Mat4::translation([0.0, 1.4 + 0.2 * (t * 1.7).sin(), 0.0])
                     * Mat4::rotation_y(t * 0.9)
                     * Mat4::rotation_x(t * 0.6)
                     * Mat4::scale([1.6, 1.6, 1.6]),
-            },
+            ),
         ];
         for i in 0..8 {
             let angle = t * 0.7 + i as f32 * TAU / 8.0;
-            draws.push(MeshDraw {
-                mesh: &self.small,
-                transform: camera
-                    * Mat4::translation([3.0 * angle.cos(), 0.5, 3.0 * angle.sin()])
+            draws.push(MeshDraw::new(
+                &self.small,
+                camera,
+                Mat4::translation([3.0 * angle.cos(), 0.5, 3.0 * angle.sin()])
                     * Mat4::rotation_y(-angle * 2.0)
                     * Mat4::rotation_z(t * 1.5 + i as f32)
                     * Mat4::scale([0.5, 0.5, 0.5]),
-            });
+            ));
         }
         draws
     }
@@ -196,6 +218,8 @@ struct Demo {
     modes: Vec<GraphicsMode>,
     /// Render and readback time of the last frame.
     gpu_time: Duration,
+    /// Light and fog on.
+    lit: bool,
     error: Option<String>,
 }
 
@@ -232,6 +256,7 @@ impl Game for Demo {
                     },
                 );
             }
+            KeyCode::Char('l' | 'L') => self.lit = !self.lit,
             KeyCode::Char('p' | 'P') => {
                 let next = match self.target.readback() {
                     Readback::Immediate => Readback::Pipelined,
@@ -252,8 +277,11 @@ impl Game for Demo {
         if width > 0 && height > 0 {
             self.target.resize(&self.gpu, width, height);
             let aspect = self.target.aspect() * frame.image_pixel_aspect();
-            let draws = self.scene.draws(ctx.elapsed().as_secs_f32(), aspect);
+            let t = ctx.elapsed().as_secs_f32();
+            let draws = self.scene.draws(t, aspect);
             let start = Instant::now();
+            self.renderer
+                .set_scene(&self.gpu, Scene::lighting(t, self.lit));
             self.renderer
                 .render(&self.gpu, &self.target, BACKGROUND, &draws);
             if let Err(error) = self.target.read_into(&self.gpu, &mut self.canvas) {
@@ -287,7 +315,7 @@ impl Game for Demo {
         buffer.set_string(0, 0, &status, style.bold());
         let modes: Vec<&str> = self.modes.iter().map(|m| m.name()).collect();
         let help = format!(
-            " G: method ({}) · M: anti-aliasing · P: readback · Esc: quit",
+            " G: method ({}) · M: anti-aliasing · L: light and fog · P: readback · Esc: quit",
             modes.join(", ")
         );
         buffer.set_string(0, size.height.saturating_sub(1), &help, Style::new().dim());
@@ -312,11 +340,13 @@ fn bench(gpu: &Gpu, scene: &Scene) {
             );
             let mut target = RenderTarget::new(gpu, width, height);
             let aspect = target.aspect();
+            renderer.set_scene(gpu, Scene::lighting(0.0, true));
             renderer.render(gpu, &target, BACKGROUND, &scene.draws(0.0, aspect));
             let _ = target.read_into(gpu, &mut canvas);
             let start = Instant::now();
             for frame in 0..FRAMES {
                 let draws = scene.draws(frame as f32 / 60.0, aspect);
+                renderer.set_scene(gpu, Scene::lighting(frame as f32 / 60.0, true));
                 renderer.render(gpu, &target, BACKGROUND, &draws);
                 target.read_into(gpu, &mut canvas).expect("readback");
             }

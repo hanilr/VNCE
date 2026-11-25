@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vnce_gpu` lighting and fog: `MeshRenderer::set_scene` takes a `MeshScene` with a sun
+  and ambient light (`Light`) and distance fog (`Fog`, whose alpha can fade far meshes
+  out over a sky behind the image). Vertices with a normal are lit (normals are turned
+  into world space with the inverse transpose of the model matrix); vertices without one
+  keep their colors, so the default scene draws as before. `Vertex::lit` builds a vertex
+  with a normal, `flat_shaded` gives every triangle its own face normal, and `math`
+  exposes `sub`, `dot`, `cross` and `normalize`. `gpu_cube` (`L` toggles light and fog)
+  and Relay's reactor core use them.
 - `relay` example: the showcase game. Five wings of a dark station show the GPU shader
   and mesh renderer (with CPU fallbacks), every pixel mode next to real pixels and fast /
   exact scaling, synthesized music and a pad puzzle, and the widgets with Unicode text;
@@ -171,6 +179,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `vnce_gpu::Vertex` has a `normal` field (between `position` and `color`)
+  and `MeshDraw` a `model` matrix (model to world space, for light and fog). Code that
+  builds them as struct literals must add the field; `Vertex::new` (unlit) still works and
+  `MeshDraw::new(mesh, view_projection, model)` fills both transforms.
 - Images with graphics protocols are cheaper every frame (Phase 15): `Frame::draw_image`
   compares the image with the one on the screen instead of hashing it, copies changed
   images into reused memory, and Sixel images that already fit their cells are not

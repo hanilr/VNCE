@@ -4,8 +4,8 @@
 mod common;
 
 use vnce_gpu::{
-    GpuError, Mat4, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, RenderTarget, ShaderQuad,
-    Vertex,
+    Fog, Gpu, GpuError, Light, Mat4, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, MeshScene,
+    RenderTarget, ShaderQuad, Vertex,
 };
 use vnce_raster::{Canvas, Rgba};
 
@@ -72,14 +72,8 @@ fn mesh_renderer_draws_with_depth_and_antialiasing() {
         assert!(renderer.samples() <= msaa);
         let mut target = RenderTarget::new(&gpu, 8, 4);
         let draws = [
-            MeshDraw {
-                mesh: &near,
-                transform: Mat4::IDENTITY,
-            },
-            MeshDraw {
-                mesh: &far,
-                transform: Mat4::IDENTITY,
-            },
+            MeshDraw::new(&near, Mat4::IDENTITY, Mat4::IDENTITY),
+            MeshDraw::new(&far, Mat4::IDENTITY, Mat4::IDENTITY),
         ];
         renderer.render(&gpu, &target, background, &draws);
         let mut canvas = Canvas::new(0, 0);
@@ -90,10 +84,7 @@ fn mesh_renderer_draws_with_depth_and_antialiasing() {
         // A transform moves the near quad off-screen: the background never shows, the
         // far quad does.
         let moved = [
-            MeshDraw {
-                mesh: &near,
-                transform: Mat4::translation([5.0, 0.0, 0.0]),
-            },
+            MeshDraw::new(&near, Mat4::IDENTITY, Mat4::translation([5.0, 0.0, 0.0])),
             draws[1],
         ];
         renderer.render(&gpu, &target, background, &moved);
@@ -106,6 +97,109 @@ fn mesh_renderer_draws_with_depth_and_antialiasing() {
         target.read_into(&gpu, &mut canvas).unwrap();
         assert_close(canvas.get(2, 2).unwrap(), background);
     }
+}
+
+/// A full-screen quad in clip space at depth `z` (the model is the identity, so world
+/// space is clip space), with `normal` on every vertex, or unlit when `normal` is `None`.
+fn screen_quad(gpu: &Gpu, z: f32, normal: Option<[f32; 3]>, color: Rgba) -> Mesh {
+    let vertex = |x, y| match normal {
+        Some(normal) => Vertex::lit([x, y, z], normal, color),
+        None => Vertex::new([x, y, z], color),
+    };
+    Mesh::new(
+        gpu,
+        &[
+            vertex(-1.0, -1.0),
+            vertex(1.0, -1.0),
+            vertex(1.0, 1.0),
+            vertex(-1.0, 1.0),
+        ],
+        &[0, 1, 2, 0, 2, 3],
+    )
+}
+
+/// Renders one mesh with `scene` onto a 4×4 target and returns the center pixel.
+fn render_center(gpu: &Gpu, mesh: &Mesh, scene: MeshScene, background: Rgba) -> Rgba {
+    let mut renderer = MeshRenderer::new(
+        gpu,
+        MeshRendererOptions {
+            msaa: 1,
+            ..MeshRendererOptions::default()
+        },
+    );
+    renderer.set_scene(gpu, scene);
+    assert_eq!(renderer.scene(), &scene);
+    let mut target = RenderTarget::new(gpu, 4, 4);
+    renderer.render(
+        gpu,
+        &target,
+        background,
+        &[MeshDraw::new(mesh, Mat4::IDENTITY, Mat4::IDENTITY)],
+    );
+    let mut canvas = Canvas::new(0, 0);
+    target.read_into(gpu, &mut canvas).unwrap();
+    canvas.get(2, 2).unwrap()
+}
+
+#[test]
+fn mesh_light_brightens_faces_toward_the_sun() {
+    let Some(gpu) = gpu() else { return };
+    let white = Rgba::rgb(255, 255, 255);
+    let background = Rgba::rgb(0, 0, 0);
+    let scene = MeshScene {
+        light: Some(Light {
+            direction: [0.0, 0.0, -3.0],
+            sun_color: [0.8, 0.8, 0.8],
+            ambient: [0.2, 0.2, 0.2],
+        }),
+        ..MeshScene::default()
+    };
+    // Facing the sun: ambient + sun = 1. Facing away: ambient only, linear 0.2 = sRGB 124.
+    let toward = screen_quad(&gpu, 0.5, Some([0.0, 0.0, -1.0]), white);
+    assert_close(render_center(&gpu, &toward, scene, background), white);
+    let away = screen_quad(&gpu, 0.5, Some([0.0, 0.0, 1.0]), white);
+    let dark = render_center(&gpu, &away, scene, background);
+    assert!((122..=126).contains(&dark.r), "{dark:?}");
+    // Unlit vertices and an unlit scene keep their colors.
+    let unlit = screen_quad(&gpu, 0.5, None, white);
+    assert_close(render_center(&gpu, &unlit, scene, background), white);
+    assert_close(
+        render_center(&gpu, &away, MeshScene::default(), background),
+        white,
+    );
+}
+
+#[test]
+fn mesh_fog_fades_far_pixels_to_the_fog_color() {
+    let Some(gpu) = gpu() else { return };
+    let red = Rgba::rgb(255, 0, 0);
+    let mist = Rgba::rgb(0, 0, 255);
+    let quad = screen_quad(&gpu, 0.5, None, red);
+    // The quad is about 10 units from the camera.
+    let fogged = |start, end, color| MeshScene {
+        fog: Some(Fog { color, start, end }),
+        camera: [0.0, 0.0, -9.5],
+        ..MeshScene::default()
+    };
+    let background = Rgba::rgb(0, 0, 0);
+    assert_close(
+        render_center(&gpu, &quad, fogged(0.0, 5.0, mist), background),
+        mist,
+    );
+    assert_close(
+        render_center(&gpu, &quad, fogged(50.0, 100.0, mist), background),
+        red,
+    );
+    let half = render_center(&gpu, &quad, fogged(0.0, 20.0, mist), background);
+    assert!(half.r > 100 && half.b > 100, "{half:?}");
+    // A transparent fog color fades the mesh out.
+    let gone = render_center(
+        &gpu,
+        &quad,
+        fogged(0.0, 5.0, Rgba::TRANSPARENT),
+        Rgba::TRANSPARENT,
+    );
+    assert_eq!(gone.a, 0, "{gone:?}");
 }
 
 #[test]

@@ -1,4 +1,4 @@
-//! A small 4×4 matrix type for transforms and cameras.
+//! A small 4×4 matrix type and 3D vector helpers for transforms and cameras.
 //!
 //! Conventions match `wgpu`: right-handed coordinates (x right, y up, the camera looks
 //! along −z), column vectors (`projection * view * model`), clip-space depth in `0..=1`.
@@ -144,15 +144,21 @@ impl Mul for Mat4 {
     }
 }
 
-fn sub(a: Vec3, b: Vec3) -> Vec3 {
+/// `a − b`.
+#[must_use]
+pub fn sub(a: Vec3, b: Vec3) -> Vec3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-fn dot(a: Vec3, b: Vec3) -> f32 {
+/// The dot product of `a` and `b`.
+#[must_use]
+pub fn dot(a: Vec3, b: Vec3) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn cross(a: Vec3, b: Vec3) -> Vec3 {
+/// The cross product `a × b` (right-handed).
+#[must_use]
+pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
@@ -160,7 +166,9 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
     ]
 }
 
-fn normalize(v: Vec3) -> Vec3 {
+/// `v` scaled to length 1 (a zero vector stays zero).
+#[must_use]
+pub fn normalize(v: Vec3) -> Vec3 {
     let length = dot(v, v).sqrt();
     if length == 0.0 {
         v

@@ -349,8 +349,8 @@ fn nebula_color(t: f32) -> Rgba {
 #[cfg(feature = "gpu")]
 mod gpu {
     use vnce::vnce_gpu::{
-        Gpu, GpuOptions, Mat4, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, Readback,
-        RenderTarget, ShaderQuad, Vertex,
+        Gpu, GpuOptions, Light, Mat4, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, MeshScene,
+        Readback, RenderTarget, ShaderQuad, Vertex, flat_shaded,
     };
     use vnce::vnce_raster::{Canvas, Rgba};
 
@@ -420,11 +420,23 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
             let nebula = ShaderQuad::new(&gpu, NEBULA).map_err(|e| e.to_string())?;
             // Pipelined readback: the CPU never waits for the GPU (one frame of latency).
             let target = || RenderTarget::new(&gpu, 1, 1).with_readback(Readback::Pipelined);
-            let renderer = MeshRenderer::new(
+            let mut renderer = MeshRenderer::new(
                 &gpu,
                 MeshRendererOptions {
                     msaa: 4,
                     cull_back_faces: false,
+                },
+            );
+            // A warm key light from above the camera and a violet glow from the nebula.
+            renderer.set_scene(
+                &gpu,
+                MeshScene {
+                    light: Some(Light {
+                        direction: [0.5, 1.0, 0.8],
+                        sun_color: [0.95, 0.85, 0.7],
+                        ambient: [0.35, 0.25, 0.45],
+                    }),
+                    ..MeshScene::default()
                 },
             );
             Ok(Self {
@@ -465,26 +477,25 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
             }
             let camera = Mat4::perspective(40_f32.to_radians(), 1.0, 0.1, 50.0)
                 * Mat4::look_at([0.0, 1.2, 5.2], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-            let mut draws = vec![MeshDraw {
-                mesh: &self.gem,
-                transform: camera
-                    * Mat4::rotation_y(time * 0.9)
+            let mut draws = vec![MeshDraw::new(
+                &self.gem,
+                camera,
+                Mat4::rotation_y(time * 0.9)
                     * Mat4::rotation_x(time * 0.55)
                     * Mat4::scale([1.0, 1.3, 1.0]),
-            }];
+            )];
             for i in 0..8 {
                 let angle = time * 1.6 + i as f32 * std::f32::consts::TAU / 8.0;
-                draws.push(MeshDraw {
-                    mesh: &self.cube,
-                    transform: camera
-                        * Mat4::translation([
-                            1.8 * angle.cos(),
-                            0.35 * (time * 0.7 + i as f32).sin(),
-                            1.8 * angle.sin(),
-                        ])
-                        * Mat4::rotation_y(angle * 2.0)
+                draws.push(MeshDraw::new(
+                    &self.cube,
+                    camera,
+                    Mat4::translation([
+                        1.8 * angle.cos(),
+                        0.35 * (time * 0.7 + i as f32).sin(),
+                        1.8 * angle.sin(),
+                    ]) * Mat4::rotation_y(angle * 2.0)
                         * Mat4::scale([0.22, 0.22, 0.22]),
-                });
+                ));
             }
             self.renderer
                 .render(&self.gpu, &self.core_target, Rgba::TRANSPARENT, &draws);
@@ -497,7 +508,7 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
         }
     }
 
-    /// An octahedron with faceted warm colors (one color per face).
+    /// An octahedron with faceted warm colors (one color per face), flat shaded.
     fn gem(gpu: &Gpu) -> Mesh {
         let corners: [[f32; 3]; 6] = [
             [1.0, 0.0, 0.0],
@@ -536,6 +547,7 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
             }
             indices.extend([base, base + 1, base + 2]);
         }
+        let (vertices, indices) = flat_shaded(&vertices, &indices);
         Mesh::new(gpu, &vertices, &indices)
     }
 
@@ -563,7 +575,7 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
             let base = vertices.len() as u32;
             for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
                 let position = [0, 1, 2].map(|i| 0.5 * (normal[i] + su * u[i] + sv * v[i]));
-                vertices.push(Vertex::new(position, color));
+                vertices.push(Vertex::lit(position, normal, color));
             }
             indices.extend([0, 1, 2, 0, 2, 3].map(|i| base + i));
         }
