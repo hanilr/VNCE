@@ -69,6 +69,9 @@ and plays them on the default device with `cpal`. Without a device, games stay s
 instead of failing. On Linux the `audio` feature needs the ALSA development files
 (`libasound2-dev` on Debian / Ubuntu, `alsa-lib-devel` on Fedora).
 
+New to the engine? The [tutorial](docs/tutorial/README.md) builds a game step by step,
+from the first window to sprites, tile maps, scenes, saving and sound.
+
 Run the bundled examples (press `q` or `Esc` to quit):
 
 ```sh
@@ -138,6 +141,7 @@ Releases are described in [`docs/RELEASING.md`](docs/RELEASING.md).
 | `crates/vnce-audio/`      | Sound (`vnce_audio`).                         |
 | `tools/gen-block-tables/` | Generates block-character tables.             |
 | `docs/ARCHITECTURE.md`    | High-level design.                            |
+| `docs/tutorial/`          | Step-by-step tutorial (tested as doc-tests).  |
 | `docs/plans/`             | Approved implementation plans.                |
 | `CHANGELOG.md`            | Release history.                              |
 

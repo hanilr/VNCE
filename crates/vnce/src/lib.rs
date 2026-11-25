@@ -57,4 +57,9 @@ mod tutorial {
     mod tilemaps_camera_collision {}
     #[doc = include_str!("../../../docs/tutorial/06-scenes-and-ui.md")]
     mod scenes_and_ui {}
+    #[cfg(feature = "audio")]
+    #[doc = include_str!("../../../docs/tutorial/07-sound.md")]
+    mod sound {}
+    #[doc = include_str!("../../../docs/tutorial/08-performance.md")]
+    mod performance {}
 }

@@ -75,3 +75,7 @@ Step 1 of the agreed order is done, one commit per piece: `Rng`, `Font`, key and
 names (`KeyCode` / `Binding` implement `Display` and `FromStr`), `SaveFile` with
 `data_dir`, Lantern saving, the controls screen and the floor variants. The `Context::input()`
 borrow is fixed too. Next: step 2, the tutorial.
+
+Step 2 is done: `docs/tutorial/` has an index and eight chapters, compiled as doc-tests
+through `crates/vnce/src/lib.rs` (chapter 7 only with the `audio` feature). Next: step 3,
+docs, changelog and closing the phase.

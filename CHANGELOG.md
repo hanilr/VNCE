@@ -141,6 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   save file between runs.
 - `lantern` controls screen (Settings → Controls): change the key of every action, reset
   one or all to the defaults; keys used twice are marked.
+- Tutorial in `docs/tutorial/` (eight chapters, from the first window to sound and
+  performance); its code blocks are compiled and run as doc-tests of `vnce`.
 
 ### Changed
 
