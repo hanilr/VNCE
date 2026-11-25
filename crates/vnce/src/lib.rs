@@ -40,8 +40,9 @@ pub use vnce_game;
 pub use vnce_audio;
 
 /// The tutorial in `docs/tutorial`: every code block in it is compiled (and, unless marked
-/// `no_run`, run) by `cargo test --doc -p vnce`.
-#[cfg(doctest)]
+/// `no_run`, run) by `cargo test --doc -p vnce`. It uses the default features (`game`,
+/// `ui`), so it is only compiled with them.
+#[cfg(all(doctest, feature = "game", feature = "ui"))]
 mod tutorial {
     #[doc = include_str!("../../../docs/tutorial/README.md")]
     mod readme {}
