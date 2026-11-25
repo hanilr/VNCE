@@ -7,9 +7,10 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 12: core types, terminal layer, game loop, pixel
-> graphics, terminal graphics protocols, GPU rendering, widgets, game building blocks,
-> audio, an example game, a tutorial and an optimization pass). The API is not stable yet.
+> **Status:** early development (Phase 18: core types, terminal layer, game loop, pixel
+> graphics, terminal graphics protocols, GPU rendering with light and fog, widgets, game
+> building blocks, audio, a tutorial, an optimization pass, the showcase games Relay, Isle
+> and Glide, and a native window backend). The API is not stable yet.
 
 ## Usage
 
@@ -116,14 +117,18 @@ Environment overrides:
   off by one) or `exact` (the reference result, slower) for scaling images to their area.
 - `VNCE_GPU_BACKEND`: `vulkan`, `dx12`, `metal` or `gl` (comma-separated list).
 - `VNCE_GPU_POWER`: `high` (fastest GPU, default) or `low` (most power-efficient GPU).
+- `VNCE_TERMINAL`: `1` keeps a game built with the `window` feature in the terminal (like
+  `--terminal`).
+- `VNCE_WINDOW_SCREENSHOT`: a `.png` path; the window saves one frame there (frame 30, or
+  the one set with `VNCE_WINDOW_SCREENSHOT_FRAME`).
 
 ## Supported platforms
 
-| Platform | Terminals                                                       | GPU backends         |
-| -------- | --------------------------------------------------------------- | -------------------- |
-| Windows  | Windows Terminal, classic console (conhost)                     | DX12, Vulkan, OpenGL |
-| Linux    | Kitty, WezTerm, foot, Ghostty, Alacritty, GNOME, Konsole, xterm | Vulkan, OpenGL       |
-| macOS    | Terminal.app, iTerm2, Kitty, WezTerm, Ghostty                   | Metal                |
+| Platform | Terminals                                                       | GPU backends         | Native window                          |
+| -------- | --------------------------------------------------------------- | -------------------- | -------------------------------------- |
+| Windows  | Windows Terminal, classic console (conhost)                     | DX12, Vulkan, OpenGL | Yes                                    |
+| Linux    | Kitty, WezTerm, foot, Ghostty, Alacritty, GNOME, Konsole, xterm | Vulkan, OpenGL       | X11 and Wayland (needs `libxkbcommon`) |
+| macOS    | Terminal.app, iTerm2, Kitty, WezTerm, Ghostty                   | Metal                | Yes                                    |
 
 Every feature falls back gracefully: cells instead of graphics protocols, half blocks or
 ASCII instead of finer pixel modes, 256 or 16 colors instead of truecolor, and a software
@@ -157,6 +162,8 @@ cargo fmt --all --check
 | `crates/vnce-window/`     | Native window (`vnce_window`).                |
 | `tools/gen-block-tables/` | Generates block-character tables.             |
 | `docs/ARCHITECTURE.md`    | High-level design.                            |
+| `docs/SHIPPING-GAMES.md`  | Releasing a game in a native window.          |
+| `docs/RELEASING.md`       | Releasing the engine's crates.                |
 | `docs/tutorial/`          | Step-by-step tutorial (tested as doc-tests).  |
 | `docs/plans/`             | Approved implementation plans.                |
 | `CHANGELOG.md`            | Release history.                              |
