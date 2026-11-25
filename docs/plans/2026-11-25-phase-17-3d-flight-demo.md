@@ -1,8 +1,8 @@
 # Plan: Phase 17 — Lit meshes and the 3D flight demo "Glide"
 
 **Date:** 2026-11-25
-**Status:** Proposed (the user chose a flight game, approved the engine extension and
-wants a CPU fallback; the whole plan of Phases 15–17 still needs approval)
+**Status:** Approved (the user chose a flight game, approved the engine extension and
+wants a CPU fallback; the whole plan of Phases 15–17 was approved on 2026-11-25)
 
 ## Goal
 

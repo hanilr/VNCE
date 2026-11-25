@@ -1,8 +1,8 @@
 # Plan: Phase 16 — Isometric demo "Isle"
 
 **Date:** 2026-11-25
-**Status:** Proposed (the user chose an isometric game over a raycaster; the whole plan
-of Phases 15–17 still needs approval)
+**Status:** Approved (the user chose an isometric game over a raycaster and approved the
+whole plan of Phases 15–17 on 2026-11-25)
 
 ## Goal
 

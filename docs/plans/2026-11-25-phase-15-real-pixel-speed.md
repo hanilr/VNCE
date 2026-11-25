@@ -1,8 +1,8 @@
 # Plan: Phase 15 — Real-pixel speed
 
 **Date:** 2026-11-25
-**Status:** Proposed (the user answered the design questions; the whole plan of Phases
-15–17 still needs approval)
+**Status:** Approved (the user approved the whole plan of Phases 15–17 on 2026-11-25;
+commits stay local until the user asks to push)
 
 ## Goal
 
