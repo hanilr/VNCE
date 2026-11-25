@@ -1,5 +1,7 @@
 # Variation CLI Engine (vnce)
 
+[![CI](https://github.com/hanilr/VNCE/actions/workflows/ci.yml/badge.svg)](https://github.com/hanilr/VNCE/actions/workflows/ci.yml)
+
 `vnce` is a Rust library for building graphics, animations and games that run in the
 terminal, rendered on the **CPU** or the **GPU**.
 
