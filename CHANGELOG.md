@@ -148,6 +148,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Buffer::diff_iter` (and the `Diff` iterator): the changed cells without collecting
   them.
 - `ansi::move_right` (`CSI n C`); `TestBackend` understands `CSI n C` and `CSI n G`.
+- The repository is on GitHub (`https://github.com/hanilr/VNCE`) with CI on Windows,
+  Linux and macOS; `docs/RELEASING.md` covers the GitHub release and making the
+  repository public.
 - `ScaleQuality` (`Fast`, `Exact`), `Canvas::scaled_with`, `Terminal::scale_quality` /
   `set_scale_quality` and the `VNCE_SCALE_QUALITY` environment variable.
 
@@ -175,6 +178,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `cargo test --no-default-features` no longer fails on the tutorial: its doc-tests are
+  compiled only with the `game` and `ui` features.
+- The core robustness test builds with Rust 1.87 again, and the `input::poll` timing test
+  no longer depends on how precisely the machine sleeps (it failed on macOS CI).
 - `hello` example: frames are paced by the clock; input events (for example mouse
   movement) no longer trigger extra frames and speed up the animation.
 - `raster` example: `M` only cycles through available modes. Octant mode showed question
