@@ -18,7 +18,8 @@ pub struct Buffer {
     cells: Vec<Cell>,
 }
 
-/// A cell that changed between two buffers, returned by [`Buffer::diff`].
+/// A cell that changed between two buffers, returned by [`Buffer::diff`] and
+/// [`Buffer::diff_iter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CellUpdate<'a> {
     /// Column of the cell.
@@ -214,38 +215,22 @@ impl Buffer {
     /// whole character from its first cell). When a wide character is replaced, the cells
     /// it used to cover are returned as well. If the sizes differ, every cell except
     /// continuation cells is returned.
+    ///
+    /// [`Buffer::diff_iter`] returns the same cells without collecting them.
     #[must_use]
     pub fn diff<'a>(&'a self, previous: &Self) -> Vec<CellUpdate<'a>> {
-        let mut updates = Vec::new();
-        if self.size != previous.size {
-            for (index, cell) in self.cells.iter().enumerate() {
-                if !cell.is_continuation() {
-                    self.push_update(&mut updates, index, cell);
-                }
-            }
-            return updates;
-        }
-
-        // Number of following cells that must be redrawn because a wide character changed.
-        let mut invalidated: usize = 0;
-        // Number of following cells covered by the current wide character.
-        let mut to_skip: usize = 0;
-        for (index, (current, before)) in self.cells.iter().zip(&previous.cells).enumerate() {
-            if to_skip == 0 && (current != before || invalidated > 0) && !current.is_continuation()
-            {
-                self.push_update(&mut updates, index, current);
-            }
-            let current_width = current.width();
-            to_skip = current_width.saturating_sub(1);
-            let affected_width = current_width.max(before.width());
-            invalidated = affected_width.max(invalidated).saturating_sub(1);
-        }
-        updates
+        self.diff_iter(previous).collect()
     }
 
-    fn push_update<'a>(&self, updates: &mut Vec<CellUpdate<'a>>, index: usize, cell: &'a Cell) {
-        if let Some(Position { x, y }) = self.position_of(index) {
-            updates.push(CellUpdate { x, y, cell });
+    /// Like [`Buffer::diff`], but yields the changed cells one by one, without allocating.
+    #[must_use]
+    pub fn diff_iter<'a, 'b>(&'a self, previous: &'b Self) -> Diff<'a, 'b> {
+        Diff {
+            current: self,
+            previous: (self.size == previous.size).then_some(previous.cells.as_slice()),
+            index: 0,
+            invalidated: 0,
+            to_skip: 0,
         }
     }
 
@@ -289,6 +274,57 @@ impl Buffer {
                 cell.set_symbol(" ");
             }
         }
+    }
+}
+
+/// Iterator over the cells that changed between two buffers, returned by
+/// [`Buffer::diff_iter`].
+#[derive(Debug, Clone)]
+pub struct Diff<'a, 'b> {
+    current: &'a Buffer,
+    /// The cells of the previous buffer, or `None` if the sizes differ (every cell is
+    /// returned then).
+    previous: Option<&'b [Cell]>,
+    index: usize,
+    /// Number of following cells that must be redrawn because a wide character changed.
+    invalidated: usize,
+    /// Number of following cells covered by the current wide character.
+    to_skip: usize,
+}
+
+impl<'a> Iterator for Diff<'a, '_> {
+    type Item = CellUpdate<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cells = &self.current.cells;
+        while let Some(current) = cells.get(self.index) {
+            let index = self.index;
+            self.index += 1;
+            let changed = match self.previous {
+                None => !current.is_continuation(),
+                Some(previous) => {
+                    let before = &previous[index];
+                    let changed = self.to_skip == 0
+                        && (current != before || self.invalidated > 0)
+                        && !current.is_continuation();
+                    let current_width = current.width();
+                    self.to_skip = current_width.saturating_sub(1);
+                    let affected_width = current_width.max(before.width());
+                    self.invalidated = affected_width.max(self.invalidated).saturating_sub(1);
+                    changed
+                }
+            };
+            if changed {
+                if let Some(Position { x, y }) = self.current.position_of(index) {
+                    return Some(CellUpdate {
+                        x,
+                        y,
+                        cell: current,
+                    });
+                }
+            }
+        }
+        None
     }
 }
 

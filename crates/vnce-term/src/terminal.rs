@@ -669,7 +669,7 @@ impl<B: Backend> Terminal<B> {
 
         // Where the terminal cursor is, if known.
         let mut cursor: Option<(u16, u16)> = None;
-        for update in current.diff(previous) {
+        for update in current.diff_iter(previous) {
             if cursor != Some((update.x, update.y)) {
                 ansi::move_to(out, update.x, update.y)?;
             }

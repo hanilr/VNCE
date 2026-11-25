@@ -16,7 +16,7 @@ pub mod color;
 pub mod geometry;
 pub mod style;
 
-pub use buffer::{Buffer, CellUpdate};
+pub use buffer::{Buffer, CellUpdate, Diff};
 pub use cell::Cell;
 pub use color::{Color, ColorDepth, ParseColorError};
 pub use geometry::{Position, Rect, Size};
