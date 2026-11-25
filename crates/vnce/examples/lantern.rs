@@ -10,6 +10,9 @@
 //! ```
 //!
 //! `←↑→↓` / `WASD`: move · `P` / `Esc`: pause · `G`: display method · `Q`: quit.
+//!
+//! The best score, the settings and the controls are kept in a save file (see
+//! `vnce_game::data_dir`), which can also be edited by hand.
 
 // Game code converts freely between pixels, tiles and floats; every value stays far inside
 // the target ranges.
@@ -26,8 +29,8 @@ use std::time::Duration;
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{
-    Aabb, ActionMap, Animation, Animator, Camera, Playback, Rng, Scene, SceneStack, SpatialGrid,
-    SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
+    Aabb, ActionMap, Animation, Animator, Camera, Playback, Rng, SaveFile, Scene, SceneStack,
+    SpatialGrid, SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Font, Rgba};
 use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
@@ -54,6 +57,19 @@ enum Action {
     Method,
 }
 
+/// Every action with its name in the save file.
+const ACTIONS: [(Action, &str); 9] = [
+    (Action::Up, "up"),
+    (Action::Down, "down"),
+    (Action::Left, "left"),
+    (Action::Right, "right"),
+    (Action::Pause, "pause"),
+    (Action::Confirm, "confirm"),
+    (Action::Back, "back"),
+    (Action::Quit, "quit"),
+    (Action::Method, "method"),
+];
+
 /// Data shared by every scene.
 struct Shared {
     controls: ActionMap<Action>,
@@ -63,10 +79,45 @@ struct Shared {
     music_volume: u32,
     effects_volume: u32,
     sounds: Sounds,
+    save: SaveFile,
+}
+
+impl Shared {
+    /// Writes the best score, the settings and the controls to the save file.
+    fn store(&mut self, ctx: &Context) {
+        let save = &mut self.save;
+        save.set("best", self.best);
+        save.set("music_volume", self.music_volume);
+        save.set("effects_volume", self.effects_volume);
+        save.set("frame_rate", ctx.fps_limit());
+        save.set("display", ctx.graphics_mode());
+        for (action, name) in ACTIONS {
+            save.set_bindings(&format!("keys.{name}"), self.controls.bindings(action));
+        }
+        // A game must keep running when the disk is full or read-only; the values stay
+        // in memory and the next save tries again.
+        let _ = save.save();
+    }
+
+    /// Restores the frame rate and the display method saved by [`Shared::store`].
+    fn restore_screen(&self, ctx: &mut Context) {
+        let rate = self.save.get_str("frame_rate");
+        if let Some(&limit) = FRAME_RATES
+            .iter()
+            .find(|l| Some(l.to_string().as_str()) == rate)
+        {
+            // Every offered rate is valid.
+            let _ = ctx.set_fps_limit(limit);
+        }
+        let mode = self.save.get::<GraphicsMode>("display");
+        if let Some(mode) = mode.filter(|mode| self.modes.contains(mode)) {
+            ctx.set_graphics_mode(mode);
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let controls = ActionMap::new()
+    let mut controls = ActionMap::new()
         .bind(Action::Up, KeyCode::Up)
         .bind(Action::Up, 'w')
         .bind(Action::Down, KeyCode::Down)
@@ -82,13 +133,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bind(Action::Back, KeyCode::Esc)
         .bind(Action::Quit, 'q')
         .bind(Action::Method, 'g');
+    let save = SaveFile::open("lantern");
+    for (action, name) in ACTIONS {
+        if let Some(bindings) = save.bindings(&format!("keys.{name}")) {
+            controls.unbind(action);
+            for binding in bindings {
+                controls.add(action, binding);
+            }
+        }
+    }
     let shared = Shared {
         controls,
         modes: Vec::new(),
-        best: 0,
-        music_volume: 60,
-        effects_volume: 80,
+        best: save.get_or("best", 0),
+        music_volume: save.get_or("music_volume", 60_u32).min(100),
+        effects_volume: save.get_or("effects_volume", 80_u32).min(100),
         sounds: Sounds::new(),
+        save,
     };
     let mut game = SceneStack::new(Title::new(), shared);
     vnce_runtime::run(&mut game, RunConfig::default())?;
@@ -621,6 +682,7 @@ impl Scene<Shared> for Title {
             if let Some(&cells) = shared.modes.iter().find(|m| !m.is_protocol()) {
                 ctx.set_graphics_mode(cells);
             }
+            shared.restore_screen(ctx);
         }
     }
 
@@ -638,6 +700,7 @@ impl Scene<Shared> for Title {
             cycle_method(shared, ctx);
         }
         if shared.controls.was_pressed(Action::Quit, ctx.input()) {
+            shared.store(ctx);
             return Transition::Quit;
         }
         if shared.controls.was_pressed(Action::Confirm, ctx.input()) {
@@ -645,7 +708,10 @@ impl Scene<Shared> for Title {
             return match self.menu.selected() {
                 Some(0) => Transition::switch(Play::new(1, 0, LIVES, self.time.to_bits().into())),
                 Some(1) => Transition::push(Settings::new()),
-                _ => Transition::Quit,
+                _ => {
+                    shared.store(ctx);
+                    Transition::Quit
+                }
             };
         }
         Transition::None
@@ -800,6 +866,7 @@ impl Scene<Shared> for Settings {
             }
         }
         if back {
+            shared.store(ctx);
             return Transition::Pop;
         }
         Transition::None
@@ -1095,6 +1162,7 @@ impl Scene<Shared> for Play {
             shared.sounds.play(Sfx::Hit);
             if self.lives == 0 {
                 shared.best = shared.best.max(self.score);
+                shared.store(ctx);
                 shared.sounds.music(false);
                 return Transition::switch(GameOver {
                     score: self.score,
@@ -1250,6 +1318,7 @@ impl Scene<Shared> for GameOver {
             return Transition::switch(Title::new());
         }
         if shared.controls.was_pressed(Action::Quit, ctx.input()) {
+            shared.store(ctx);
             return Transition::Quit;
         }
         Transition::None

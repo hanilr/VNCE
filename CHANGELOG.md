@@ -137,6 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`data_dir`: `%APPDATA%`, `~/Library/Application Support`, `$XDG_DATA_HOME` or
   `~/.local/share`) with typed values, key bindings and safe writes through a temporary
   file; missing or broken files start empty.
+- `lantern` keeps the best score, volumes, frame rate, display method and controls in its
+  save file between runs.
 
 ### Changed
 
