@@ -57,6 +57,10 @@ name = "ui"
 required-features = ["ui"]
 
 [[example]]
+name = "stars"
+required-features = ["game"]
+
+[[example]]
 name = "platformer"
 required-features = ["game", "ui"]
 

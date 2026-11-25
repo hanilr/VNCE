@@ -125,6 +125,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sixel `pixel_aspect` (`"2;1`): half-height images with tall rows, used in Windows Terminal
   (`Terminal::set_sixel_tall_pixels`, `VNCE_SIXEL_ASPECT`); elsewhere changed images wait
   a few frames when the terminal falls behind.
+- `vnce_game::Rng`: a seeded random generator (xorshift64*) with `below`, `range`, `unit`,
+  `chance`, `pick`, `shuffle` and saving / restoring the state; the `lantern` and `stars`
+  examples use it instead of their own copies (`stars` now needs the `game` feature).
 
 ### Changed
 

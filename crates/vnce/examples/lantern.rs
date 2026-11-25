@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{
-    Aabb, ActionMap, Animation, Animator, Camera, Playback, Scene, SceneStack, SpatialGrid,
+    Aabb, ActionMap, Animation, Animator, Camera, Playback, Rng, Scene, SceneStack, SpatialGrid,
     SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Rgba};
@@ -98,33 +98,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 // ---------------------------------------------------------------------------------------
 // Random numbers and cave generation
 // ---------------------------------------------------------------------------------------
-
-/// A small deterministic random generator (xorshift64*).
-#[derive(Debug, Clone)]
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
-    }
-
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
-    }
-
-    /// A number in `0..n`.
-    fn below(&mut self, n: u32) -> u32 {
-        (self.next() % u64::from(n.max(1))) as u32
-    }
-
-    /// A float in `0.0..1.0`.
-    fn unit(&mut self) -> f32 {
-        (self.next() >> 40) as f32 / (1_u64 << 24) as f32
-    }
-}
 
 /// A cave: `true` cells are walls.
 struct Cave {
@@ -233,10 +206,7 @@ impl Cave {
             })
             .map(|i| (i % self.width, i / self.width))
             .collect();
-        for i in (1..cells.len()).rev() {
-            let j = rng.below(i as u32 + 1) as usize;
-            cells.swap(i, j);
-        }
+        rng.shuffle(&mut cells);
         cells
     }
 
@@ -1094,7 +1064,7 @@ impl Scene<Shared> for Play {
                 self.level + 1,
                 self.score + bonus,
                 self.lives,
-                self.rng.next(),
+                self.rng.next_u64(),
             ));
         }
         self.camera.update(dt, Some(self.player.center()));

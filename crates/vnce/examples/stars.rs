@@ -14,9 +14,9 @@
 //! Arrow keys / WASD: move · `+` / `-`: FPS limit · `P`: pause · `Esc` / `Q`: quit.
 
 use std::collections::VecDeque;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use vnce::vnce_core::{Buffer, Color, Position, Rect, Style};
+use vnce::vnce_game::Rng;
 use vnce::vnce_runtime::{self, Context, FpsLimit, Game, RunConfig, RunError};
 use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
 
@@ -79,32 +79,10 @@ fn to_cell(value: f32) -> u16 {
     cell
 }
 
-/// A tiny xorshift random number generator (no dependency needed for a demo).
-struct Rng(u64);
-
-impl Rng {
-    fn from_time() -> Self {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
-        Self(u64::from(nanos) | 1)
-    }
-
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    /// A random value in `low..high` (`low` if the range is empty).
-    fn range(&mut self, low: u16, high: u16) -> u16 {
-        if high <= low {
-            return low;
-        }
-        let span = u64::from(high - low);
-        low + u16::try_from(self.next() % span).unwrap_or(0)
-    }
+/// A random value in `low..high` (`low` if the range is empty), from the engine's tiny
+/// xorshift random number generator (no dependency needed for a demo).
+fn random_in(rng: &mut Rng, low: u16, high: u16) -> u16 {
+    u16::try_from(rng.range(i32::from(low)..i32::from(high))).unwrap_or(low)
 }
 
 /// One cell of the fading trail behind the player.
@@ -146,8 +124,8 @@ impl StarsGame {
 
     fn random_star(&mut self, field: Rect) -> (u16, u16) {
         (
-            self.rng.range(field.left(), field.right()),
-            self.rng.range(field.top(), field.bottom()),
+            random_in(&mut self.rng, field.left(), field.right()),
+            random_in(&mut self.rng, field.top(), field.bottom()),
         )
     }
 

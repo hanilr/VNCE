@@ -1,6 +1,6 @@
 [package]
 name = "vnce-game"
-description = "Game building blocks for the Variation CLI Engine: key bindings, collision, sprites, animation, tile maps, camera and scenes."
+description = "Game building blocks for the Variation CLI Engine: key bindings, collision, sprites, animation, tile maps, camera, scenes and random numbers."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
