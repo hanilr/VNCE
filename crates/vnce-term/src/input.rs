@@ -335,6 +335,9 @@ pub enum MouseButton {
 ///
 /// Use `Duration::ZERO` to check for pending events without waiting.
 ///
+/// On Windows the wait ends within about a millisecond of the timeout, although the system
+/// waits for console input in steps of about 15.6 ms.
+///
 /// # Errors
 ///
 /// Returns an error if reading from the terminal fails.
@@ -342,7 +345,7 @@ pub fn poll(timeout: Duration) -> io::Result<Option<Event>> {
     let deadline = Instant::now().checked_add(timeout);
     loop {
         let remaining = deadline.map_or(timeout, |d| d.saturating_duration_since(Instant::now()));
-        if !ct::poll(remaining)? {
+        if !wait_for_event(remaining)? {
             return Ok(None);
         }
         // Events we do not report (media keys, modifier-only keys) are skipped.
@@ -352,6 +355,62 @@ pub fn poll(timeout: Duration) -> io::Result<Option<Event>> {
         if remaining.is_zero() {
             return Ok(None);
         }
+    }
+}
+
+/// Waits up to `timeout` until an event can be read.
+fn wait_for_event(timeout: Duration) -> io::Result<bool> {
+    #[cfg(windows)]
+    {
+        precise_wait(timeout, ct::poll, std::thread::sleep)
+    }
+    #[cfg(not(windows))]
+    {
+        ct::poll(timeout)
+    }
+}
+
+/// Longest wait that is rounded up to the next step of the Windows system timer (15.6 ms
+/// by default): waits for console input with a timeout end on those steps only.
+#[cfg(any(windows, test))]
+const COARSE_STEP: Duration = Duration::from_millis(16);
+
+/// Length of the short sleeps at the end of a wait.
+#[cfg(any(windows, test))]
+const FINE_STEP: Duration = Duration::from_millis(1);
+
+/// Waits up to `timeout` for `poll` to report an event, ending close to the timeout even
+/// when `poll` only wakes up on coarse timer steps (Windows: a 1 ms wait can take 15 ms,
+/// which makes a 60 FPS game alternate between 15.6 ms and 31 ms frames).
+///
+/// `poll` waits coarsely while more than [`COARSE_STEP`] remains; the rest is spent in short
+/// `sleep`s (the standard library sleeps with a high-resolution timer), checking for events
+/// in between, so an event waits at most [`FINE_STEP`].
+#[cfg(any(windows, test))]
+fn precise_wait(
+    timeout: Duration,
+    mut poll: impl FnMut(Duration) -> io::Result<bool>,
+    mut sleep: impl FnMut(Duration),
+) -> io::Result<bool> {
+    let Some(deadline) = Instant::now().checked_add(timeout) else {
+        // No deadline that can be represented: wait as long as `poll` does.
+        return poll(timeout);
+    };
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining > COARSE_STEP {
+            if poll(remaining.saturating_sub(COARSE_STEP))? {
+                return Ok(true);
+            }
+            continue;
+        }
+        if poll(Duration::ZERO)? {
+            return Ok(true);
+        }
+        if remaining.is_zero() {
+            return Ok(false);
+        }
+        sleep(remaining.min(FINE_STEP));
     }
 }
 
@@ -459,6 +518,53 @@ fn convert_button(button: ct::MouseButton) -> MouseButton {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn precise_wait_ends_on_time_with_a_coarse_poll() {
+        // A poll that, like Windows, rounds every non-zero wait up to 16 ms steps.
+        let coarse_poll = |timeout: Duration| -> io::Result<bool> {
+            if !timeout.is_zero() {
+                let steps = timeout.as_micros().div_ceil(16_000);
+                let micros = u64::try_from(steps * 16_000).unwrap_or(u64::MAX);
+                std::thread::sleep(Duration::from_micros(micros));
+            }
+            Ok(false)
+        };
+        for millis in [0, 1, 5, 17, 40] {
+            let timeout = Duration::from_millis(millis);
+            let start = Instant::now();
+            assert!(!precise_wait(timeout, coarse_poll, std::thread::sleep).unwrap());
+            let elapsed = start.elapsed();
+            assert!(elapsed >= timeout, "{millis} ms: {elapsed:?}");
+            // The coarse poll alone would overshoot by up to 16 ms.
+            assert!(
+                elapsed < timeout + Duration::from_millis(12),
+                "{millis} ms: {elapsed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn precise_wait_returns_as_soon_as_an_event_is_ready() {
+        let mut calls = 0;
+        let ready = precise_wait(
+            Duration::from_secs(10),
+            |_| {
+                calls += 1;
+                Ok(calls == 3)
+            },
+            |_| {},
+        );
+        assert!(ready.unwrap());
+        assert_eq!(calls, 3);
+        // Errors from the poll are returned.
+        let error = precise_wait(
+            Duration::from_millis(1),
+            |_| Err(io::Error::other("closed")),
+            |_| {},
+        );
+        assert!(error.is_err());
+    }
 
     #[test]
     fn key_names_round_trip() {
