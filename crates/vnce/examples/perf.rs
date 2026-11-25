@@ -185,6 +185,28 @@ fn terminal_scenarios(frames: u32) -> io::Result<()> {
         Some(bytes),
     );
 
+    // Scattered cells: 600 "stars" move one column per frame over an empty screen.
+    let mut terminal = sink_terminal(ColorDepth::TrueColor)?;
+    let start = Instant::now();
+    for frame in 0..frames {
+        terminal.draw(|f| {
+            let buffer = f.buffer_mut();
+            for i in 0..600u32 {
+                let x = (i * 7919 + frame) % u32::from(COLUMNS);
+                let y = (i * 104_729) % u32::from(ROWS);
+                let style = Style::new().fg(Color::Rgb(255, 255, (i % 256) as u8));
+                buffer.set_string(x as u16, y as u16, "*", style);
+            }
+        })?;
+    }
+    let bytes = terminal.backend().bytes;
+    report(
+        "600 scattered cells move",
+        frames,
+        start.elapsed(),
+        Some(bytes),
+    );
+
     // Nothing drawn: the fixed cost of a frame (clearing and diffing).
     let mut terminal = sink_terminal(ColorDepth::TrueColor)?;
     let start = Instant::now();

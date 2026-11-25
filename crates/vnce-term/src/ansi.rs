@@ -26,6 +26,24 @@ pub fn move_to<W: Write>(out: &mut W, x: u16, y: u16) -> io::Result<()> {
     out.write_all(sequence.as_bytes())
 }
 
+/// Moves the cursor `columns` to the right on its row (`CSI n C`), stopping at the right
+/// edge. Shorter than [`move_to`] when the row stays the same.
+///
+/// # Errors
+///
+/// Returns any error from the writer.
+pub fn move_right<W: Write>(out: &mut W, columns: u16) -> io::Result<()> {
+    if columns == 1 {
+        // 1 is the default count.
+        return out.write_all(b"\x1b[C");
+    }
+    let mut sequence = Sequence::new();
+    sequence.push_bytes(CSI.as_bytes());
+    sequence.push_number(u32::from(columns));
+    sequence.push_bytes(b"C");
+    out.write_all(sequence.as_bytes())
+}
+
 /// Clears the whole screen. Cleared cells get the *current* background color, so reset
 /// the style first to get the default background.
 ///
@@ -399,6 +417,8 @@ mod tests {
         assert_eq!(written(|o| move_to(o, 0, 0)), "\x1b[1;1H");
         assert_eq!(written(|o| move_to(o, 9, 4)), "\x1b[5;10H");
         assert_eq!(written(|o| move_to(o, u16::MAX, 0)), "\x1b[1;65536H");
+        assert_eq!(written(|o| move_right(o, 1)), "\x1b[C");
+        assert_eq!(written(|o| move_right(o, 12)), "\x1b[12C");
         assert_eq!(written(clear_screen), "\x1b[2J");
         assert_eq!(written(reset_style), "\x1b[0m");
         assert_eq!(written(hide_cursor), "\x1b[?25l");

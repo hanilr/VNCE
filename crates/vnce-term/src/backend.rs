@@ -474,6 +474,17 @@ impl TestBackend {
                 let column = numbers.get(1).copied().unwrap_or(1).max(1);
                 self.cursor = (column - 1, row - 1);
             }
+            // Cursor forward: stops at the last column.
+            Some('C') => {
+                let columns = numbers.first().copied().unwrap_or(1).max(1);
+                let last = self.size.width.saturating_sub(1);
+                self.cursor.0 = self.cursor.0.saturating_add(columns).min(last);
+            }
+            // Cursor to column (1-based).
+            Some('G') => {
+                let column = numbers.first().copied().unwrap_or(1).max(1);
+                self.cursor.0 = (column - 1).min(self.size.width.saturating_sub(1));
+            }
             Some('J') if numbers.first() == Some(&2) => {
                 let mut blank = vnce_core::Cell::EMPTY;
                 blank.bg = self.style.1;

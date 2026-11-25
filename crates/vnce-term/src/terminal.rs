@@ -670,8 +670,13 @@ impl<B: Backend> Terminal<B> {
         // Where the terminal cursor is, if known.
         let mut cursor: Option<(u16, u16)> = None;
         for update in current.diff_iter(previous) {
-            if cursor != Some((update.x, update.y)) {
-                ansi::move_to(out, update.x, update.y)?;
+            match cursor {
+                Some(at) if at == (update.x, update.y) => {}
+                // A jump forward on the same row: `CSI n C` is shorter than a full move.
+                Some((x, y)) if y == update.y && x < update.x => {
+                    ansi::move_right(out, update.x - x)?;
+                }
+                _ => ansi::move_to(out, update.x, update.y)?,
             }
             let cell = update.cell;
             style.apply(
@@ -1443,7 +1448,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             output(&mut terminal),
-            "\x1b[?2026h\x1b[0m\x1b[1;3HX\x1b[1;6HY\x1b[0m\x1b[?2026l"
+            "\x1b[?2026h\x1b[0m\x1b[1;3HX\x1b[2CY\x1b[0m\x1b[?2026l"
         );
         assert_eq!(terminal.backend().screen_row(0), "abXdeY");
     }
@@ -1459,6 +1464,34 @@ mod tests {
             .unwrap();
         let out = output(&mut terminal);
         assert!(out.contains("\x1b[1;1Habcd\x1b[2;1He"), "{out:?}");
+    }
+
+    #[test]
+    fn jumps_on_the_same_row_move_right() {
+        let mut terminal = terminal(10, 2);
+        terminal.draw(|_| {}).unwrap();
+        output(&mut terminal);
+        terminal
+            .draw(|f| {
+                f.buffer_mut().set_string(1, 0, "a", Style::new());
+                f.buffer_mut().set_string(3, 0, "b", Style::new());
+                f.buffer_mut().set_string(9, 0, "c", Style::new());
+                f.buffer_mut().set_string(0, 1, "d", Style::new());
+            })
+            .unwrap();
+        let out = output(&mut terminal);
+        assert!(
+            out.contains("\x1b[1;2Ha\x1b[Cb\x1b[5Cc\x1b[2;1Hd"),
+            "{out:?}"
+        );
+        assert_eq!(
+            terminal
+                .backend()
+                .screen()
+                .cell(9, 0)
+                .map(vnce_core::Cell::symbol),
+            Some("c")
+        );
     }
 
     #[test]
