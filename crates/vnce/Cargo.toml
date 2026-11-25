@@ -76,6 +76,14 @@ path = "examples/relay/main.rs"
 required-features = ["game", "ui"]
 test = true
 
+# The isometric showcase: a GPU ocean with the `gpu` feature, sound with `audio`. Its
+# smoke test runs with `cargo test`.
+[[example]]
+name = "isle"
+path = "examples/isle/main.rs"
+required-features = ["game", "ui"]
+test = true
+
 [[example]]
 name = "sfx"
 required-features = ["audio", "ui"]
