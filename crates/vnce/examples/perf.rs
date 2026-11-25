@@ -225,8 +225,9 @@ fn terminal_scenarios(frames: u32) -> io::Result<()> {
     Ok(())
 }
 
-/// Full-screen images shown with Kitty and Sixel, at the exact pixel size of the cells
-/// (as Relay draws them): a still picture, and the same picture with a moving sprite.
+/// Full-screen images shown with Kitty and Sixel, at the size of
+/// `Frame::image_pixel_size` (as Relay draws them, so nothing is scaled): a still picture,
+/// and the same picture with a moving sprite.
 /// `render` is the time spent inside the draw closure (`Frame::draw_image`); `flush` is the
 /// rest of the frame (planning and encoding).
 fn image_scenarios(frames: u32) -> io::Result<()> {
@@ -235,11 +236,9 @@ fn image_scenarios(frames: u32) -> io::Result<()> {
         for moving in [false, true] {
             let mut terminal = sink_terminal(ColorDepth::TrueColor)?;
             terminal.set_graphics_mode(GraphicsMode::Protocol(protocol));
-            let (cell_width, cell_height) = terminal.cell_pixels();
-            let mut background = Canvas::new(
-                u32::from(COLUMNS) * u32::from(cell_width),
-                u32::from(ROWS) * u32::from(cell_height),
-            );
+            let mut size = (0, 0);
+            terminal.draw(|f| size = f.image_pixel_size(area))?;
+            let mut background = Canvas::new(size.0, size.1);
             gradient(&mut background, 0);
             let mut canvas = background.clone();
             // The first frame sends the whole image; it is not measured.
