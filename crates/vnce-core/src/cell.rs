@@ -47,6 +47,12 @@ impl Symbol {
         }
     }
 
+    /// Returns `true` for the empty symbol (continuation cells). Cheaper than
+    /// `as_str().is_empty()`.
+    fn is_empty(&self) -> bool {
+        matches!(self, Self::Inline { len: 0, .. })
+    }
+
     fn as_str(&self) -> &str {
         match self {
             Self::Inline { len, bytes } => {
@@ -72,6 +78,9 @@ impl fmt::Debug for Symbol {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Cell {
     symbol: Symbol,
+    /// Number of columns the symbol occupies, computed once when the symbol is set (it is
+    /// read for every cell of every frame).
+    width: u8,
     /// Foreground color.
     pub fg: Color,
     /// Background color.
@@ -84,6 +93,7 @@ impl Cell {
     /// A blank cell: a space with default colors and no modifiers.
     pub const EMPTY: Self = Self {
         symbol: Symbol::SPACE,
+        width: 1,
         fg: Color::Reset,
         bg: Color::Reset,
         modifiers: Modifiers::NONE,
@@ -109,6 +119,7 @@ impl Cell {
     /// handles wide characters and filters out control characters.
     pub fn set_symbol(&mut self, symbol: &str) -> &mut Self {
         self.symbol = Symbol::new(symbol);
+        self.width = symbol_width(symbol);
         self
     }
 
@@ -150,18 +161,28 @@ impl Cell {
     /// Number of columns the symbol occupies (0 for continuation cells).
     #[must_use]
     pub fn width(&self) -> usize {
-        self.symbol().width()
+        usize::from(self.width)
     }
 
     /// Returns `true` if this is the continuation cell of a wide character.
     #[must_use]
     pub fn is_continuation(&self) -> bool {
-        self.symbol().is_empty()
+        self.symbol.is_empty()
     }
 
     /// Turns the cell into a continuation cell (empty symbol), keeping its style.
     pub(crate) fn set_continuation(&mut self) {
         self.symbol = Symbol::EMPTY;
+        self.width = 0;
+    }
+}
+
+/// Number of columns `symbol` occupies. Printable ASCII (by far the most common case) is
+/// one column without a table lookup.
+fn symbol_width(symbol: &str) -> u8 {
+    match symbol.as_bytes() {
+        [byte] if byte.is_ascii_graphic() || *byte == b' ' => 1,
+        _ => u8::try_from(symbol.width()).unwrap_or(u8::MAX),
     }
 }
 
@@ -197,6 +218,23 @@ mod tests {
         assert_eq!(Cell::new("").width(), 0);
         assert!(Cell::new("").is_continuation());
         assert!(!Cell::EMPTY.is_continuation());
+        assert_eq!(Cell::EMPTY.width(), 1);
+        assert_eq!(Cell::new("\u{200b}").width(), 0);
+        assert!(!Cell::new("\u{200b}").is_continuation());
+        assert_eq!(Cell::new("\x07").width(), "\x07".width());
+
+        // The cached width follows every change of the symbol.
+        let mut cell = Cell::new("界");
+        cell.set_char('a');
+        assert_eq!(cell.width(), 1);
+        cell.set_continuation();
+        assert_eq!(cell.width(), 0);
+        assert!(cell.is_continuation());
+    }
+
+    #[test]
+    fn caching_the_width_does_not_grow_cells() {
+        assert!(size_of::<Cell>() <= 40, "{}", size_of::<Cell>());
     }
 
     #[test]

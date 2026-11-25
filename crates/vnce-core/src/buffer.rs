@@ -113,6 +113,21 @@ impl Buffer {
         }
         let end = x.saturating_add(max_width).min(self.size.width);
         let mut column = x;
+        if text.is_ascii() {
+            // Fast path: every ASCII character is its own grapheme, one column wide; ASCII
+            // control characters are exactly the ones `char::is_control` skips below.
+            for (i, byte) in text.bytes().enumerate() {
+                if byte.is_ascii_control() {
+                    continue;
+                }
+                if column >= end {
+                    break;
+                }
+                self.put_grapheme(column, y, &text[i..=i], 1, style);
+                column += 1;
+            }
+            return column;
+        }
         for grapheme in text.graphemes(true) {
             if grapheme.chars().any(char::is_control) {
                 continue;
@@ -312,6 +327,28 @@ mod tests {
         let mut buffer = Buffer::empty(Size::new(6, 1));
         buffer.set_string(0, 0, "a\x1b[2Jb\n\tc", Style::new());
         assert_eq!(row(&buffer, 0), "a[2Jbc");
+    }
+
+    #[test]
+    fn ascii_fast_path_matches_the_grapheme_path() {
+        // A leading "é" sends the same text through the grapheme path.
+        for text in [
+            "a\x1b[2Jb\r\n\tc\x7fd",
+            "hello world",
+            "",
+            "\r\n",
+            "x\u{0}y",
+        ] {
+            for max in [20, 3, 1, 0] {
+                let style = Style::new().fg(Color::Red);
+                let mut fast = Buffer::empty(Size::new(12, 1));
+                fast.set_string(0, 0, "é", style);
+                let fast_end = fast.set_stringn(1, 0, text, max, style);
+                let mut slow = Buffer::empty(Size::new(12, 1));
+                let slow_end = slow.set_stringn(0, 0, &format!("é{text}"), max + 1, style);
+                assert_eq!((fast_end, &fast), (slow_end, &slow), "{text:?} {max}");
+            }
+        }
     }
 
     #[test]
