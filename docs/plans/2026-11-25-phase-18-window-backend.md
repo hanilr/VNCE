@@ -1,8 +1,10 @@
 # Plan: Phase 18 — Native window backend `vnce-window`
 
 **Date:** 2026-11-25
-**Status:** Agreed in direction, after Phase 17 (the user chose this over writing an own
-terminal; the details below are reviewed and approved before the phase starts)
+**Status:** Approved, in progress (the user chose this over writing an own terminal; on
+2026-11-25 the user approved the detailed plan below, chose a free font that fits the
+project's license, and asked for the most performant way, so showing GPU pictures without
+a readback is part of this phase)
 
 ## Goal
 
@@ -32,22 +34,61 @@ native window instead of writing escape sequences:
   or a `--window` flag that examples pass through), so a game switches with no code
   change.
 
-## Steps (to be detailed before starting)
+## Decisions (approved 2026-11-25)
 
-1. Plan review: dependencies, font handling, API for choosing the window.
-2. Window and event loop, the `Backend` implementation for cells (glyph atlas).
-3. Images as textures; `vnce-gpu` targets shown directly.
-4. Input, resize, focus, fullscreen.
-5. Examples: Relay, Isle and Glide run in a window; a release build guide (Windows,
-   macOS, Linux) for packaging a game.
-6. Bench, tests (headless where possible), docs and closing.
+- **A cargo feature:** `window` is a feature of `vnce`. Without it a game runs in the
+  terminal and none of the window's dependencies are built. Built with it, the same game
+  opens in a native window by default; `--terminal` (or `VNCE_TERMINAL=1`) still runs it
+  in the terminal for development. A game calls `vnce::run` instead of
+  `vnce_runtime::run`; nothing else changes.
+- **Frames without escape sequences:** `Backend` gains a hook that receives the finished
+  frame (the cell buffer and the image requests) directly; a backend that takes it skips
+  the ANSI output. The window's `Driver` pumps the `winit` event loop
+  (`pump_app_events`) from vnce's own game loop, so the runtime loop stays as it is
+  (Windows, macOS, Linux).
+- **New engine values (breaking, noted in the changelog):** `GraphicsMode::Native`
+  ("window": images in the window's real pixels, any size, no encoding) and
+  `Event::Closed` (the window's close button; the runtime quits).
+- **Cells:** a glyph atlas rasterized with `fontdue` from the bundled JetBrains Mono
+  (SIL Open Font License 1.1: free, may be bundled and shipped with games, the license
+  file stays next to it). Block elements, sextants, braille and box drawing are drawn by
+  code, not taken from the font, so the pixel modes line up exactly with the cell grid.
+  Bold is drawn by offsetting; underline as a line. Cells are instanced quads: one pass
+  for backgrounds, one for glyphs.
+- **Images:** textures in their cell areas, uploaded only when they changed, scaled with
+  the engine's scale quality on the GPU.
+- **No readback (most performant):** the window shares the game's GPU device. `vnce_gpu`
+  keeps the instance and offers the first `Gpu` it created to the window; `Frame` gets a
+  way to show an external texture, and `RenderTarget::show(gpu, frame, area)` hands its
+  texture to the window directly, or reads it back and calls `draw_image` in a terminal.
+  When the devices cannot be shared (an adapter that cannot present to the window), the
+  window falls back to the readback.
 
-## Dependencies (to be approved)
+## Steps (one commit each)
 
-- `winit` for windows and events (cross-platform).
+1. Plan (this section).
+2. Engine hooks: the `Backend` frame hook, `GraphicsMode::Native`, `Event::Closed`, the
+   external texture request in `Frame`; tests with `TestBackend`.
+3. `vnce-window`: the window, the wgpu surface, the event pump and key mapping (presses
+   and releases always reported), the cell renderer with the glyph atlas and the drawn
+   block / sextant / braille / box glyphs.
+4. Images as textures; resize, DPI, focus, fullscreen (F11 / Alt+Enter), window title,
+   icon and size options, sharp whole-pixel scaling.
+5. Sharing the GPU: `vnce_gpu` instance and shared device, `RenderTarget::show`, the window
+   drawing external textures; `gpu_cube`, `gpu_shader`, Relay and Glide use it where their
+   pictures are finished on the GPU.
+6. `vnce::run` and the `window` feature, `--terminal`; Relay, Isle, Glide and the other
+   examples run in a window; a release guide (hiding the console on Windows, a macOS app
+   bundle, Linux).
+7. Bench (window against Kitty), tests (headless where possible: atlas, drawn glyphs, key
+   mapping, rendering into a texture on a software adapter), docs and closing.
+
+## Dependencies (approved)
+
+- `winit` for windows and events (Apache-2.0).
+- `fontdue` to rasterize the font (MIT OR Apache-2.0 OR Zlib).
 - `wgpu` is already used by `vnce-gpu`.
-- A font rasterizer (for example `fontdue` or `ab_glyph`) and a bundled open-license
-  monospace font.
+- JetBrains Mono Regular, bundled with its OFL-1.1 license file.
 
 ## Risks / open questions
 
