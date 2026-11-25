@@ -83,6 +83,8 @@ struct PlacedImage {
     tiles: Option<Tiles>,
     /// The Sixel image as drawn: `canvas` scaled to the pixels of its area. Compared with
     /// the next frame to find the cells that changed.
+    /// `None` when `canvas` already has that size (it is then drawn as it is; see
+    /// [`PlacedImage::shown`]).
     shown: Option<Canvas>,
 }
 
@@ -1048,6 +1050,11 @@ impl ImageState {
 }
 
 impl PlacedImage {
+    /// The Sixel image as drawn: the scaled copy, or the canvas when it needs no scaling.
+    fn shown(&self) -> &Canvas {
+        self.shown.as_ref().unwrap_or(&self.canvas)
+    }
+
     /// Every Kitty id of the image: its tiles, or the image itself.
     fn kitty_ids(&self) -> Vec<u32> {
         self.tiles
@@ -1118,7 +1125,8 @@ fn exact_cells(canvas: &Canvas, area: Rect, cell_pixels: (u16, u16)) -> bool {
         && canvas.height() == u32::from(area.height) * u32::from(cell_pixels.1)
 }
 
-/// For Sixel, the image as drawn: scaled to the pixels of its area.
+/// For Sixel, the image as drawn: scaled to the pixels of its area. `None` for other
+/// protocols, and when `canvas` already has exactly those pixels (no copy is made).
 fn sixel_shown(
     protocol: GraphicsProtocol,
     canvas: &Canvas,
@@ -1126,7 +1134,7 @@ fn sixel_shown(
     cell_pixels: (u16, u16),
     quality: ScaleQuality,
 ) -> Option<Canvas> {
-    (protocol == GraphicsProtocol::Sixel).then(|| {
+    (protocol == GraphicsProtocol::Sixel && !exact_cells(canvas, area, cell_pixels)).then(|| {
         canvas.scaled_with(
             u32::from(area.width) * u32::from(cell_pixels.0),
             u32::from(area.height) * u32::from(cell_pixels.1),
@@ -1194,8 +1202,8 @@ fn changed_parts(
             Some(Change::Tiles(dirty))
         }
         GraphicsProtocol::Sixel => {
-            let old = placed.shown.as_ref()?;
-            let new = shown?;
+            let old = placed.shown();
+            let new = shown.unwrap_or(canvas);
             if (old.width(), old.height()) != (new.width(), new.height()) {
                 return None;
             }
@@ -1270,14 +1278,12 @@ fn write_image(
             let width = u32::from(area.width) * u32::from(cell_pixels.0);
             let height = u32::from(area.height) * u32::from(cell_pixels.1);
             let options = sixel_options;
-            match &image.shown {
-                Some(shown) if (shown.width(), shown.height()) == (width, height) => {
-                    sixel.encode(shown, options, out);
-                }
-                _ => {
-                    let scaled = image.canvas.scaled_with(width, height, scale_quality);
-                    sixel.encode(&scaled, options, out);
-                }
+            let shown = image.shown();
+            if (shown.width(), shown.height()) == (width, height) {
+                sixel.encode(shown, options, out);
+            } else {
+                let scaled = image.canvas.scaled_with(width, height, scale_quality);
+                sixel.encode(&scaled, options, out);
             }
         }
         GraphicsProtocol::Iterm2 => {
@@ -1309,10 +1315,8 @@ fn write_patch(
     );
     match graphics {
         GraphicsProtocol::Sixel => {
-            if let Some(shown) = &image.shown {
-                let options = sixel_options;
-                sixel.encode(&crop(shown, x, y, width, height), options, out);
-            }
+            let options = sixel_options;
+            sixel.encode(&crop(image.shown(), x, y, width, height), options, out);
         }
         GraphicsProtocol::Iterm2 => {
             #[cfg(feature = "png")]
@@ -2024,6 +2028,35 @@ mod tests {
             let sent = sequences(&mut terminal);
             assert_eq!(sent.len(), 1);
             assert!(sent[0].contains("\"1;1;60;60"));
+        }
+
+        #[test]
+        fn sixel_images_at_cell_resolution_keep_no_scaled_copy() {
+            let mut terminal = with_mode(SIXEL, 12, 6);
+            let area = Rect::new(1, 1, 6, 3);
+            let mut picture = exact(6, 3, Rgba::rgb(10, 20, 30));
+            picture.fill_rect(12, 7, 30, 25, Rgba::rgb(200, 40, 90));
+            terminal.draw(|f| f.draw_image(area, &picture)).unwrap();
+            assert!(terminal.images.placed[0].shown.is_none());
+            // Sent exactly as the encoder writes the canvas itself.
+            let mut expected = Vec::new();
+            let options = protocol::sixel::SixelOptions {
+                max_colors: 256,
+                dither: false,
+                pixel_aspect: 1,
+            };
+            protocol::sixel::Encoder::new().encode(&picture, options, &mut expected);
+            assert_eq!(
+                sequences(&mut terminal),
+                [String::from_utf8_lossy(&expected).into_owned()]
+            );
+
+            // An image of another size is scaled once and the scaled copy kept.
+            terminal
+                .draw(|f| f.draw_image(area, &Canvas::filled(7, 7, Rgba::WHITE)))
+                .unwrap();
+            let shown = terminal.images.placed[0].shown.as_ref().unwrap();
+            assert_eq!((shown.width(), shown.height()), (60, 60));
         }
 
         #[test]
