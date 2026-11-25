@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `relay` example: the showcase game. Five wings of a dark station show the GPU shader
+  and mesh renderer (with CPU fallbacks), every pixel mode next to real pixels and fast /
+  exact scaling, synthesized music and a pad puzzle, and the widgets with Unicode text;
+  light sprites are added into a layer that multiplies the scene. `--bench` measures it
+  without a screen; a smoke test plays it.
 - Initial Cargo workspace with the `vnce` crate (imported as `vnce`).
 - Project documentation, license and tooling configuration.
 - `vnce-core` (`vnce_core`): geometry (`Position`, `Size`, `Rect`), `Color` with hex/name

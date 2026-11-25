@@ -285,5 +285,9 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-24-phase-11-example-game.md`](plans/2026-11-24-phase-11-example-game.md).
 12. **Phase 12:** Optimization of the per-frame work — see
    [`plans/2026-11-25-phase-12-optimization.md`](plans/2026-11-25-phase-12-optimization.md).
+13. **Phase 13:** Publishing on GitHub — see
+   [`plans/2026-11-25-phase-13-github.md`](plans/2026-11-25-phase-13-github.md).
+14. **Phase 14:** The showcase game Relay — see
+   [`plans/2026-11-25-phase-14-showcase.md`](plans/2026-11-25-phase-14-showcase.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.
