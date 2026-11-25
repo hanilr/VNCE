@@ -109,7 +109,7 @@ fn random_writes_keep_wide_characters_whole() {
                     buffer.set_stringn(x, y, &random_text(&mut rng), max, style);
                 }
                 2 => {
-                    buffer.set_symbol(x, y, rng.pick(&PIECES), style);
+                    buffer.set_symbol(x, y, rng.pick::<&str>(&PIECES), style);
                 }
                 _ => {
                     let area = Rect::new(x, y, rng.below(6) as u16, rng.below(4) as u16);
