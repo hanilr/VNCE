@@ -295,6 +295,10 @@ pub(crate) fn view(ctx: &Context, frame: &Frame<'_>) -> (Rect, u32, u32) {
 /// `big` between frames. Rows that repeat a source row are copied, not recomputed.
 pub(crate) fn present(frame: &mut Frame<'_>, area: Rect, canvas: &Canvas, big: &mut Canvas) {
     let (width, height) = frame.image_pixel_size(area);
+    if canvas.width() == 0 || canvas.height() == 0 {
+        // Nothing to enlarge (for example before the first GPU picture arrives).
+        return;
+    }
     if (width, height) == (canvas.width(), canvas.height()) || width == 0 || height == 0 {
         frame.draw_image(area, canvas);
         return;
@@ -431,6 +435,27 @@ mod tests {
         press(&mut driver, 15_600, KeyCode::Enter);
         press(&mut driver, 16_000, KeyCode::Esc);
         press(&mut driver, 16_300, KeyCode::Char('p'));
+        run_with(&mut game, RunConfig::default(), terminal, driver).expect("the game runs");
+    }
+
+    /// The title and the station with GPU pictures (CPU where there is no GPU): the first
+    /// frames come before the first pipelined readback, so the pictures are still empty.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn gpu_pictures_from_the_first_frame() {
+        let shared = Shared::new(SaveFile::new(), true, false);
+        let mut game = bench::Limited {
+            game: SceneStack::new(scenes::Title::new(), shared),
+            frames: 120,
+        };
+        let capabilities = Capabilities {
+            key_release_events: true,
+            ..Capabilities::default()
+        };
+        let terminal = Terminal::new(TestBackend::new(80, 24), capabilities)
+            .expect("the test backend has a size");
+        let mut driver = ScriptedDriver::new();
+        press(&mut driver, 1000, KeyCode::Enter);
         run_with(&mut game, RunConfig::default(), terminal, driver).expect("the game runs");
     }
 }

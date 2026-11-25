@@ -448,9 +448,15 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
                 target.resize(&self.gpu, width, height);
             }
             self.nebula.render(&self.gpu, target, time, 0);
+            let canvas = &mut self.nebula_canvases[index];
             // A failed readback keeps the last picture.
-            let _ = target.read_into(&self.gpu, &mut self.nebula_canvases[index]);
-            &self.nebula_canvases[index]
+            let _ = target.read_into(&self.gpu, canvas);
+            // Pipelined readback delivers its first picture a frame later (and a resize
+            // starts over): until then, deep space of the right size.
+            if (canvas.width(), canvas.height()) != (width, height) {
+                *canvas = Canvas::filled(width, height, Rgba::rgb(4, 3, 14));
+            }
+            canvas
         }
 
         pub fn core(&mut self, size: u32, time: f32) -> &Canvas {
@@ -483,6 +489,10 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
             self.renderer
                 .render(&self.gpu, &self.core_target, Rgba::TRANSPARENT, &draws);
             let _ = self.core_target.read_into(&self.gpu, &mut self.core_canvas);
+            // Until the first picture arrives: nothing (transparent) of the right size.
+            if (self.core_canvas.width(), self.core_canvas.height()) != (size, size) {
+                self.core_canvas = Canvas::new(size, size);
+            }
             &self.core_canvas
         }
     }
