@@ -139,6 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file; missing or broken files start empty.
 - `lantern` keeps the best score, volumes, frame rate, display method and controls in its
   save file between runs.
+- `lantern` controls screen (Settings → Controls): change the key of every action, reset
+  one or all to the defaults; keys used twice are marked.
 
 ### Changed
 

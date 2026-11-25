@@ -29,12 +29,13 @@ use std::time::Duration;
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{
-    Aabb, ActionMap, Animation, Animator, Camera, Playback, Rng, SaveFile, Scene, SceneStack,
-    SpatialGrid, SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
+    Aabb, ActionMap, Animation, Animator, Binding, Camera, Playback, Rng, SaveFile, Scene,
+    SceneStack, SpatialGrid, SpriteSheet, TileMap, Tileset, Timer, Transition, ease,
+    move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Font, Rgba};
 use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
-use vnce::vnce_term::{Frame, GraphicsMode, KeyCode};
+use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{
     Alignment, Block, BorderType, Clear, Line, List, ListState, Paragraph, StatefulWidget, Widget,
 };
@@ -116,8 +117,9 @@ impl Shared {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut controls = ActionMap::new()
+/// The controls before the player changes them.
+fn default_controls() -> ActionMap<Action> {
+    ActionMap::new()
         .bind(Action::Up, KeyCode::Up)
         .bind(Action::Up, 'w')
         .bind(Action::Down, KeyCode::Down)
@@ -132,7 +134,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bind(Action::Confirm, ' ')
         .bind(Action::Back, KeyCode::Esc)
         .bind(Action::Quit, 'q')
-        .bind(Action::Method, 'g');
+        .bind(Action::Method, 'g')
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut controls = default_controls();
     let save = SaveFile::open("lantern");
     for (action, name) in ACTIONS {
         if let Some(bindings) = save.bindings(&format!("keys.{name}")) {
@@ -794,8 +800,8 @@ impl Settings {
     }
 }
 
-/// Settings rows: music, effects, frame rate, display method, back.
-const SETTINGS_ROWS: usize = 5;
+/// Settings rows: music, effects, frame rate, display method, controls, back.
+const SETTINGS_ROWS: usize = 6;
 
 /// Frame rate limits offered in the settings, in order.
 const FRAME_RATES: [FpsLimit; 5] = [
@@ -837,8 +843,13 @@ impl Scene<Shared> for Settings {
                 shared.sounds.play(Sfx::Blip);
             }
         }
+        let confirm = controls.was_pressed(Action::Confirm, input);
+        if confirm && self.menu.selected() == Some(4) {
+            shared.sounds.play(Sfx::Blip);
+            return Transition::push(Controls::new());
+        }
         let back = controls.was_pressed(Action::Back, input)
-            || (controls.was_pressed(Action::Confirm, input) && self.menu.selected() == Some(4));
+            || (confirm && self.menu.selected() == Some(5));
         if step != 0 {
             let direction = step.signum();
             match self.menu.selected() {
@@ -873,7 +884,7 @@ impl Scene<Shared> for Settings {
     }
 
     fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        let area = frame.area().centered(44, 11);
+        let area = frame.area().centered(44, 12);
         let bar = |value: u32| {
             let filled = (value / 10) as usize;
             format!(
@@ -890,6 +901,7 @@ impl Scene<Shared> for Settings {
                 FpsLimit::Unlimited => "Frames   ◀ unlimited ▶".to_owned(),
             },
             format!("Display  ◀ {} ▶", ctx.graphics_mode()),
+            "Controls ▸".to_owned(),
             "Back".to_owned(),
         ];
         let note = if shared.sounds.available() {
@@ -913,6 +925,172 @@ impl Scene<Shared> for Settings {
                     .border_style(Style::new().fg(Color::rgb(140, 200, 255)))
                     .title(Line::from(" Settings ").centered())
                     .title_bottom(Line::from(note).centered())
+                    .padding(vnce::vnce_ui::Padding::new(2, 2, 1, 1)),
+            )
+            .render(area, buffer, &mut self.menu);
+    }
+
+    fn is_overlay(&self) -> bool {
+        true
+    }
+}
+
+/// The controls screen: every action with its keys. Enter waits for a new key.
+struct Controls {
+    menu: ListState,
+    /// Waiting for the key of the selected action.
+    waiting: bool,
+    /// A key was just bound: skip one update so that key does not act at once.
+    settle: bool,
+}
+
+impl Controls {
+    /// Rows: one per action, then "reset all" and "back".
+    const ROWS: usize = ACTIONS.len() + 2;
+
+    fn new() -> Self {
+        Self {
+            menu: ListState::with_selected(Some(0)),
+            waiting: false,
+            settle: false,
+        }
+    }
+}
+
+/// The keys of `action` as text (`Up / w`).
+fn binding_names(controls: &ActionMap<Action>, action: Action) -> String {
+    let names: Vec<String> = controls.bindings(action).map(|b| b.to_string()).collect();
+    if names.is_empty() {
+        "-".to_owned()
+    } else {
+        names.join(" / ")
+    }
+}
+
+/// Puts the default keys of `action` back.
+fn reset_binding(controls: &mut ActionMap<Action>, action: Action) {
+    controls.unbind(action);
+    for binding in default_controls().bindings(action) {
+        controls.add(action, binding);
+    }
+}
+
+/// Whether a key of `action` is also used by another action. Esc is left out: pause and
+/// back share it on purpose.
+fn has_clash(controls: &ActionMap<Action>, action: Action) -> bool {
+    controls.bindings(action).any(|binding| {
+        binding != Binding::Key(KeyCode::Esc)
+            && ACTIONS.iter().any(|&(other, _)| {
+                other != action && controls.bindings(other).any(|b| b == binding)
+            })
+    })
+}
+
+impl Scene<Shared> for Controls {
+    fn event(
+        &mut self,
+        shared: &mut Shared,
+        _ctx: &mut Context,
+        event: &Event,
+    ) -> Transition<Shared> {
+        let Event::Key(key) = event else {
+            return Transition::None;
+        };
+        if !self.waiting || key.kind != KeyEventKind::Press {
+            return Transition::None;
+        }
+        self.waiting = false;
+        self.settle = true;
+        // Esc cancels, so it cannot be chosen here.
+        if key.code == KeyCode::Esc {
+            return Transition::None;
+        }
+        let code = match key.code {
+            KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
+            other => other,
+        };
+        if let Some(&(action, _)) = self.menu.selected().and_then(|row| ACTIONS.get(row)) {
+            shared.controls.rebind(action, code);
+            shared.sounds.play(Sfx::Blip);
+        }
+        Transition::None
+    }
+
+    fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
+        if self.waiting || std::mem::take(&mut self.settle) {
+            return Transition::None;
+        }
+        let input = ctx.input();
+        let controls = &shared.controls;
+        if controls.was_pressed(Action::Up, input) {
+            self.menu.select_previous(Self::ROWS, true);
+        }
+        if controls.was_pressed(Action::Down, input) {
+            self.menu.select_next(Self::ROWS, true);
+        }
+        let row = self.menu.selected().unwrap_or(0);
+        let confirm = controls.was_pressed(Action::Confirm, input);
+        let back = controls.was_pressed(Action::Back, input);
+        if input.was_pressed(KeyCode::Backspace) {
+            if let Some(&(action, _)) = ACTIONS.get(row) {
+                reset_binding(&mut shared.controls, action);
+                shared.sounds.play(Sfx::Blip);
+            }
+            return Transition::None;
+        }
+        if back || (confirm && row == Self::ROWS - 1) {
+            shared.store(ctx);
+            return Transition::Pop;
+        }
+        if confirm {
+            shared.sounds.play(Sfx::Blip);
+            if row < ACTIONS.len() {
+                self.waiting = true;
+            } else {
+                shared.controls = default_controls();
+            }
+        }
+        Transition::None
+    }
+
+    fn render(&mut self, shared: &Shared, _ctx: &Context, frame: &mut Frame<'_>) {
+        let area = frame.area().centered(48, Self::ROWS as u16 + 4);
+        let warning = Style::new().fg(Color::rgb(255, 120, 100));
+        let mut items: Vec<Line<'_>> = ACTIONS
+            .iter()
+            .enumerate()
+            .map(|(row, &(action, name))| {
+                let keys = if self.waiting && self.menu.selected() == Some(row) {
+                    "press a key… (Esc: cancel)".to_owned()
+                } else {
+                    binding_names(&shared.controls, action)
+                };
+                let line = Line::from(format!("{name:<9}{keys}"));
+                if has_clash(&shared.controls, action) {
+                    line.style(warning)
+                } else {
+                    line
+                }
+            })
+            .collect();
+        items.push(Line::from("Reset all"));
+        items.push(Line::from("Back"));
+        let buffer = frame.buffer_mut();
+        Clear.render(area, buffer);
+        List::new(items)
+            .highlight_symbol("▶ ")
+            .highlight_style(
+                Style::new()
+                    .fg(Color::rgb(20, 16, 24))
+                    .bg(Color::rgb(140, 200, 255)),
+            )
+            .style(Style::new().bg(Color::rgb(22, 18, 30)))
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(Color::rgb(140, 200, 255)))
+                    .title(Line::from(" Controls ").centered())
+                    .title_bottom(Line::from(" Enter: change · Backspace: default ").centered())
                     .padding(vnce::vnce_ui::Padding::new(2, 2, 1, 1)),
             )
             .render(area, buffer, &mut self.menu);
