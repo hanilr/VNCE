@@ -84,6 +84,14 @@ path = "examples/isle/main.rs"
 required-features = ["game", "ui"]
 test = true
 
+# The 3D showcase: GPU meshes and sky with the `gpu` feature (CPU otherwise), sound with
+# `audio`. Its smoke tests run with `cargo test --example glide`.
+[[example]]
+name = "glide"
+path = "examples/glide/main.rs"
+required-features = ["game", "ui"]
+test = true
+
 [[example]]
 name = "sfx"
 required-features = ["audio", "ui"]
