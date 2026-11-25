@@ -28,6 +28,7 @@ vnce-gpu = { workspace = true, optional = true }
 vnce-ui = { workspace = true, optional = true }
 vnce-game = { workspace = true, optional = true }
 vnce-audio = { workspace = true, optional = true }
+vnce-window = { workspace = true, optional = true }
 
 [features]
 default = ["ui", "game"]
@@ -43,6 +44,10 @@ audio = ["dep:vnce-audio"]
 ogg = ["audio", "vnce-audio/ogg"]
 # GPU rendering with wgpu (`vnce::vnce_gpu`). Off by default: wgpu is a large dependency.
 gpu = ["dep:vnce-gpu"]
+# A native window (`vnce::vnce_window`): `vnce::run` opens games in their own window
+# instead of the terminal (`--terminal` or `VNCE_TERMINAL=1` keep the terminal). For
+# releasing games; it uses the GPU (wgpu) and winit.
+window = ["dep:vnce-window"]
 
 [[example]]
 name = "gpu_shader"

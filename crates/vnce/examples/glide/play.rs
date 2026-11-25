@@ -631,25 +631,70 @@ impl Play {
     }
 
     /// Renders the world and the effects and instruments into the renderer's canvas.
+    #[cfg(test)]
     fn draw_picture(&mut self, shared: &Shared, width: u32, height: u32, aspect: f32) {
-        let camera = self.camera(aspect);
+        let view = self.world_view(shared, aspect);
         let mut renderer = shared.renderer.borrow_mut();
+        let shown = renderer.render(&self.terrain, &view, width, height);
+        record_time(shared, renderer.stats().milliseconds);
+        self.draw_overlays(renderer.canvas(), &shown);
+    }
+
+    /// The camera, light and objects of a picture of `aspect`; builds the chunks around
+    /// the camera before the first one.
+    fn world_view(&mut self, shared: &Shared, aspect: f32) -> View {
+        let camera = self.camera(aspect);
         if !self.warmed {
-            renderer.warm_up(&self.terrain, &camera);
+            shared.renderer.borrow_mut().warm_up(&self.terrain, &camera);
             self.warmed = true;
         }
-        let view = View {
+        View {
             camera,
             light: daylight(self.phase()),
             objects: self.objects(),
             time: self.time,
-        };
-        let shown = renderer.render(&self.terrain, &view, width, height);
-        let (sum, frames) = shared.render_time.get();
-        shared
-            .render_time
-            .set((sum + f64::from(renderer.stats().milliseconds), frames + 1));
-        let canvas = renderer.canvas();
+        }
+    }
+
+    /// Shows the world in `area`. In a native window that draws with the GPU, the sky and
+    /// the meshes stay on the GPU as two textures and only the instruments are drawn on
+    /// the CPU, on a transparent picture over them; elsewhere the world is read back,
+    /// composed and drawn as one picture.
+    fn show_world(&mut self, shared: &Shared, frame: &mut Frame<'_>, area: Rect) {
+        let (_, width, height, aspect) = view(shared, frame);
+        if width == 0 || height == 0 {
+            return;
+        }
+        let world = self.world_view(shared, aspect);
+        let mut renderer = shared.renderer.borrow_mut();
+        if frame.accepts_textures() {
+            if let Some(layers) = renderer.render_layers(&self.terrain, &world, width, height) {
+                record_time(shared, renderer.stats().milliseconds);
+                for layer in layers {
+                    frame.draw_texture(area, layer);
+                }
+                let mut instruments = std::mem::replace(&mut self.big, Canvas::new(0, 0));
+                if (instruments.width(), instruments.height()) == (width, height) {
+                    instruments.clear(Rgba::TRANSPARENT);
+                } else {
+                    instruments = Canvas::new(width, height);
+                }
+                self.draw_overlays(&mut instruments, &world.camera);
+                frame.draw_image(area, &instruments);
+                self.big = instruments;
+                return;
+            }
+        }
+        let shown = renderer.render(&self.terrain, &world, width, height);
+        record_time(shared, renderer.stats().milliseconds);
+        self.draw_overlays(renderer.canvas(), &shown);
+        show(shared, frame, area, renderer.canvas(), &mut self.big);
+    }
+
+    /// The trail, sparks, speed lines and flash, and (when flying) the instruments, drawn
+    /// with the camera of the picture they go over.
+    fn draw_overlays(&self, canvas: &mut Canvas, shown: &Camera) {
+        let shown = *shown;
         let points: Vec<(Vec3, f32)> = self.trail.iter().copied().collect();
         hud::trail(canvas, &shown, &points, TRAIL_TIME);
         hud::sparks(canvas, &shown, &self.sparks);
@@ -726,13 +771,9 @@ impl Play {
     }
 
     /// The title screen's backdrop: one step and a picture.
-    pub fn backdrop(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        let (area, width, height, aspect) = view(shared, ctx, frame);
-        if width > 0 && height > 0 {
-            self.draw_picture(shared, width, height, aspect);
-            let mut renderer = shared.renderer.borrow_mut();
-            show(shared, frame, area, renderer.canvas(), &mut self.big);
-        }
+    pub fn backdrop(&mut self, shared: &Shared, frame: &mut Frame<'_>) {
+        let (area, _, _, _) = view(shared, frame);
+        self.show_world(shared, frame, area);
     }
 
     pub fn step_backdrop(&mut self, shared: &Shared, dt: f32) {
@@ -890,6 +931,14 @@ fn draw_perf(shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
         .render(area, buffer);
 }
 
+/// Adds a world picture's drawing time to the bench's sum.
+fn record_time(shared: &Shared, milliseconds: f32) {
+    let (sum, frames) = shared.render_time.get();
+    shared
+        .render_time
+        .set((sum + f64::from(milliseconds), frames + 1));
+}
+
 impl Scene<Shared> for Play {
     fn start(&mut self, shared: &mut Shared, ctx: &mut Context) {
         shared.detect_modes(ctx);
@@ -978,12 +1027,8 @@ impl Scene<Shared> for Play {
     }
 
     fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        let (area, width, height, aspect) = view(shared, ctx, frame);
-        if width > 0 && height > 0 {
-            self.draw_picture(shared, width, height, aspect);
-            let mut renderer = shared.renderer.borrow_mut();
-            show(shared, frame, area, renderer.canvas(), &mut self.big);
-        }
+        let (area, _, _, _) = view(shared, frame);
+        self.show_world(shared, frame, area);
         self.draw_text(shared, ctx, frame);
     }
 }

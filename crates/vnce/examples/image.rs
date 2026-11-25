@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 use vnce::vnce_core::{Color, Rect, Size, Style};
 use vnce::vnce_raster::protocol::{kitty, sixel};
 use vnce::vnce_raster::{Canvas, Rgba};
-use vnce::vnce_runtime::{self, Context, Game, RunConfig};
+use vnce::vnce_runtime::{Context, Game, RunConfig};
 use vnce::vnce_term::{
     Event, Frame, GraphicsMode, GraphicsProtocol, KeyCode, KeyEventKind, TerminalInfo,
 };
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(path) => Canvas::load_png(path)?,
         None => test_image(),
     };
-    vnce_runtime::run(&mut Viewer::new(image), RunConfig::default())?;
+    vnce::run(&mut Viewer::new(image), RunConfig::default())?;
     Ok(())
 }
 

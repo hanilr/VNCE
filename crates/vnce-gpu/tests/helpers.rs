@@ -33,6 +33,27 @@ fn shader_quad_uv_runs_from_the_top_left() {
 }
 
 #[test]
+fn shader_quad_reads_the_programs_params() {
+    let Some(gpu) = gpu() else { return };
+    let mut shader = ShaderQuad::new(
+        &gpu,
+        "fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
+            return vec4<f32>(globals.params[0].x, globals.params[3].w, 0.0, 1.0);
+        }",
+    )
+    .unwrap();
+    let mut params = [[0.0; 4]; 4];
+    params[0][0] = 1.0;
+    params[3][3] = 1.0;
+    shader.set_params(params);
+    let mut target = RenderTarget::new(&gpu, 2, 2);
+    shader.render(&gpu, &target, 0.0, 0);
+    let mut canvas = Canvas::new(0, 0);
+    target.read_into(&gpu, &mut canvas).unwrap();
+    assert_eq!(canvas.get(1, 1), Some(Rgba::rgb(255, 255, 0)));
+}
+
+#[test]
 fn shader_errors_are_returned() {
     let Some(gpu) = gpu() else { return };
     let error = ShaderQuad::new(&gpu, "fn shade() {}").unwrap_err();

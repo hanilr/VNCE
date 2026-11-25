@@ -1,8 +1,15 @@
 //! Connecting to a GPU: [`Gpu`], [`GpuOptions`] and [`GpuInfo`].
 
 use std::fmt;
+use std::sync::Mutex;
 
 use crate::GpuError;
+
+/// The GPU shared by everything in this process (see [`Gpu::new`]).
+static SHARED: Mutex<Option<Gpu>> = Mutex::new(None);
+/// The device a native window draws with, when it shows this process's textures
+/// directly (see [`Gpu::presents`]).
+static PRESENTING: Mutex<Option<wgpu::Device>> = Mutex::new(None);
 
 /// Which GPU to prefer on machines with more than one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -118,7 +125,10 @@ impl fmt::Display for GpuInfo {
 
 /// A connection to a GPU: the device and its command queue.
 ///
-/// Create one at start-up and keep it; creating a device is slow.
+/// Create one at start-up and keep it; creating a device is slow. A process has one GPU
+/// device: [`Gpu::new`] returns the one created first (by the game or by a native
+/// window), so a window can show the game's textures without copying them. Clones share
+/// the same device.
 ///
 /// ```no_run
 /// use vnce_gpu::{Gpu, GpuOptions};
@@ -128,8 +138,9 @@ impl fmt::Display for GpuInfo {
 ///     Err(error) => println!("no GPU, using the CPU renderer: {error}"),
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Gpu {
+    instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -137,7 +148,8 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    /// Connects to a GPU.
+    /// Connects to a GPU, or returns the GPU this process already uses (see
+    /// [`Gpu::shared`]; `options` then do not apply).
     ///
     /// A hardware adapter is preferred; without one, a software adapter is used when
     /// [`GpuOptions::allow_software`] is set. The environment overrides `options` (see
@@ -149,6 +161,9 @@ impl Gpu {
     /// fall back to CPU rendering) and [`GpuError::Device`] when the device cannot be
     /// created.
     pub fn new(options: GpuOptions) -> Result<Self, GpuError> {
+        if let Some(shared) = Self::shared() {
+            return Ok(shared);
+        }
         let options = options.with_env();
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         descriptor.backends = options.backends;
@@ -162,6 +177,20 @@ impl Gpu {
             ..wgpu::DeviceDescriptor::default()
         }))
         .map_err(|error| GpuError::Device(error.to_string()))?;
+        let gpu = Self::from_wgpu(instance, adapter, device, queue);
+        gpu.share();
+        Ok(gpu)
+    }
+
+    /// A `Gpu` from `wgpu` objects made elsewhere (for example by a native window that
+    /// needed an adapter for its surface).
+    #[must_use]
+    pub fn from_wgpu(
+        instance: wgpu::Instance,
+        adapter: wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Self {
         let raw = adapter.get_info();
         let driver = [raw.driver.as_str(), raw.driver_info.as_str()]
             .iter()
@@ -175,12 +204,51 @@ impl Gpu {
             device_type: raw.device_type,
             driver,
         };
-        Ok(Self {
+        Self {
+            instance,
             adapter,
             device,
             queue,
             info,
-        })
+        }
+    }
+
+    /// The GPU this process uses, if one was created.
+    #[must_use]
+    pub fn shared() -> Option<Self> {
+        SHARED.lock().ok().and_then(|shared| shared.clone())
+    }
+
+    /// Makes this the GPU of the process, unless there already is one.
+    pub fn share(&self) {
+        if let Ok(mut shared) = SHARED.lock() {
+            if shared.is_none() {
+                *shared = Some(self.clone());
+            }
+        }
+    }
+
+    /// Marks this GPU as the one a native window draws with: its textures can be shown
+    /// directly ([`RenderTarget::show`](crate::RenderTarget::show)). Called by the window.
+    pub fn set_presenting(&self) {
+        if let Ok(mut presenting) = PRESENTING.lock() {
+            *presenting = Some(self.device.clone());
+        }
+    }
+
+    /// Whether a native window draws with this GPU's device, so its textures can be shown
+    /// without reading them back.
+    #[must_use]
+    pub fn presents(&self) -> bool {
+        PRESENTING
+            .lock()
+            .is_ok_and(|presenting| presenting.as_ref() == Some(&self.device))
+    }
+
+    /// The `wgpu` instance, for surfaces and advanced use.
+    #[must_use]
+    pub fn instance(&self) -> &wgpu::Instance {
+        &self.instance
     }
 
     /// What kind of GPU is used.

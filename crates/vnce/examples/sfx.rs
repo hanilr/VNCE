@@ -23,7 +23,7 @@
 use vnce::vnce_audio::{Audio, Preset, Sound, Synth, Wave};
 use vnce::vnce_core::{Color, Style};
 use vnce::vnce_raster::{Canvas, PixelMode, RenderOptions, Rgba};
-use vnce::vnce_runtime::{self, Context, Game, RunConfig};
+use vnce::vnce_runtime::{Context, Game, RunConfig};
 use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{
     Block, BorderType, Constraint, Layout, Line, List, ListState, Paragraph, Span, StatefulWidget,
@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mode: PixelMode::HalfBlock,
     };
     workshop.rebuild();
-    vnce_runtime::run(&mut workshop, RunConfig::default())?;
+    vnce::run(&mut workshop, RunConfig::default())?;
     Ok(())
 }
 

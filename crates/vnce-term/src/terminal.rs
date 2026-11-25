@@ -201,8 +201,13 @@ impl Frame<'_> {
                     matches!(shown, NativeImage::Pixels { area: a, canvas: c, .. }
                         if *a == area && same_pixels(c, canvas))
                 });
-                // A later image in the same area replaces an earlier one.
-                if let Some(index) = self.native.iter().position(|r| r.area() == area) {
+                // A later image in the same area replaces an earlier one (textures stay:
+                // they are layered under it).
+                let earlier = self
+                    .native
+                    .iter()
+                    .position(|r| matches!(r, NativeRequest::Pixels { area: a, .. } if *a == area));
+                if let Some(index) = earlier {
                     if let NativeRequest::Pixels {
                         canvas: Some(earlier),
                         ..
@@ -235,6 +240,9 @@ impl Frame<'_> {
     /// Shows `image` (for example a GPU texture) scaled to fill `area`, without copying
     /// its pixels. Returns `false` and draws nothing when the frame cannot show it (see
     /// [`Frame::accepts_textures`]).
+    ///
+    /// Textures and images are layered in drawing order, also in the same area: a sky, the
+    /// scene over it and instruments over both.
     pub fn draw_texture(&mut self, area: Rect, image: ExternalImage) -> bool {
         if !self.accepts_textures() {
             return false;
@@ -242,15 +250,6 @@ impl Frame<'_> {
         let area = self.image_area(area);
         if area.is_empty() {
             return true;
-        }
-        if let Some(index) = self.native.iter().position(|r| r.area() == area) {
-            if let NativeRequest::Pixels {
-                canvas: Some(earlier),
-                ..
-            } = self.native.remove(index)
-            {
-                recycle(self.spare, Some(earlier));
-            }
         }
         self.native.push(NativeRequest::External { area, image });
         true

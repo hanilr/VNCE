@@ -33,7 +33,7 @@ use vnce::vnce_gpu::{
     MeshScene, Readback, RenderTarget, Vec3, Vertex,
 };
 use vnce::vnce_raster::{Canvas, Rgba};
-use vnce::vnce_runtime::{self, Context, Game, RunConfig};
+use vnce::vnce_runtime::{Context, Game, RunConfig};
 use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
 
 const BACKGROUND: Rgba = Rgba::rgb(12, 14, 28);
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         lit: true,
         error: None,
     };
-    vnce_runtime::run(&mut demo, RunConfig::default())?;
+    vnce::run(&mut demo, RunConfig::default())?;
     Ok(())
 }
 
@@ -284,11 +284,12 @@ impl Game for Demo {
                 .set_scene(&self.gpu, Scene::lighting(t, self.lit));
             self.renderer
                 .render(&self.gpu, &self.target, BACKGROUND, &draws);
-            if let Err(error) = self.target.read_into(&self.gpu, &mut self.canvas) {
+            // In a native window the texture is shown as it is; elsewhere it is read
+            // back into the canvas and drawn.
+            if let Err(error) = self.target.show(&self.gpu, frame, area, &mut self.canvas) {
                 self.error = Some(error.to_string());
             }
             self.gpu_time = start.elapsed();
-            frame.draw_image(area, &self.canvas);
         }
 
         let readback = match self.target.readback() {

@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use vnce::vnce_core::{Buffer, Color, Rect, Size, Style};
 use vnce::vnce_gpu::{Gpu, GpuOptions, Readback, RenderTarget, ShaderQuad};
 use vnce::vnce_raster::{Canvas, PixelMode, RenderOptions};
-use vnce::vnce_runtime::{self, Context, Game, RunConfig};
+use vnce::vnce_runtime::{Context, Game, RunConfig};
 use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
 
 /// Spheres over a checkered floor, with soft shadows and fog.
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gpu_time: Duration::ZERO,
         error: None,
     };
-    vnce_runtime::run(&mut demo, RunConfig::default())?;
+    vnce::run(&mut demo, RunConfig::default())?;
     Ok(())
 }
 
@@ -210,11 +210,12 @@ impl Game for Demo {
                 ctx.elapsed().as_secs_f32(),
                 frame.count() as u32,
             );
-            if let Err(error) = self.target.read_into(&self.gpu, &mut self.canvas) {
+            // In a native window the texture is shown as it is; elsewhere it is read
+            // back into the canvas and drawn.
+            if let Err(error) = self.target.show(&self.gpu, frame, area, &mut self.canvas) {
                 self.error = Some(error.to_string());
             }
             self.gpu_time = start.elapsed();
-            frame.draw_image(area, &self.canvas);
         }
 
         let readback = match self.target.readback() {

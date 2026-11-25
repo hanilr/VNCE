@@ -562,26 +562,11 @@ pub fn open(options: &WindowOptions) -> Result<(WindowBackend, WindowDriver), Wi
 
 /// The GPU device, the surface and the renderer for `window`.
 fn gpu_state(window: &Arc<Window>, options: &WindowOptions) -> Result<State, String> {
-    let mut descriptor =
-        wgpu::InstanceDescriptor::new_with_display_handle(Box::new(Arc::clone(window)));
-    descriptor = descriptor.with_env();
-    let instance = wgpu::Instance::new(descriptor);
-    let surface = instance
-        .create_surface(Arc::clone(window))
-        .map_err(|e| e.to_string())?;
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        compatible_surface: Some(&surface),
-        ..wgpu::RequestAdapterOptions::default()
-    }))
-    .map_err(|e| e.to_string())?;
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("vnce_window device"),
-        required_limits: adapter.limits(),
-        ..wgpu::DeviceDescriptor::default()
-    }))
-    .map_err(|e| e.to_string())?;
-    let capabilities = surface.get_capabilities(&adapter);
+    let (gpu, surface) = window_gpu(window)?;
+    // The game's GPU pictures can now be shown without reading them back.
+    gpu.set_presenting();
+    let (adapter, device, queue) = (gpu.adapter(), gpu.device().clone(), gpu.queue().clone());
+    let capabilities = surface.get_capabilities(adapter);
     let format = capabilities
         .formats
         .iter()
@@ -644,4 +629,38 @@ fn gpu_state(window: &Arc<Window>, options: &WindowOptions) -> Result<State, Str
     };
     state.resize();
     Ok(state)
+}
+
+/// The GPU to draw the window with, and its surface: the process's GPU when it can draw
+/// to the window (so the game's textures can be shown directly), else a new one that
+/// becomes the process's GPU.
+fn window_gpu(window: &Arc<Window>) -> Result<(vnce_gpu::Gpu, wgpu::Surface<'static>), String> {
+    if let Some(gpu) = vnce_gpu::Gpu::shared() {
+        if let Ok(surface) = gpu.instance().create_surface(Arc::clone(window)) {
+            if gpu.adapter().is_surface_supported(&surface) {
+                return Ok((gpu, surface));
+            }
+        }
+    }
+    let descriptor =
+        wgpu::InstanceDescriptor::new_with_display_handle(Box::new(Arc::clone(window))).with_env();
+    let instance = wgpu::Instance::new(descriptor);
+    let surface = instance
+        .create_surface(Arc::clone(window))
+        .map_err(|e| e.to_string())?;
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(&surface),
+        ..wgpu::RequestAdapterOptions::default()
+    }))
+    .map_err(|e| e.to_string())?;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("vnce_window device"),
+        required_limits: adapter.limits(),
+        ..wgpu::DeviceDescriptor::default()
+    }))
+    .map_err(|e| e.to_string())?;
+    let gpu = vnce_gpu::Gpu::from_wgpu(instance, adapter, device, queue);
+    gpu.share();
+    Ok((gpu, surface))
 }

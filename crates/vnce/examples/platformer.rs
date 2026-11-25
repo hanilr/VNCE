@@ -30,7 +30,7 @@ use vnce::vnce_game::{
     TileMap, Tileset, Timer, Transition, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Rgba};
-use vnce::vnce_runtime::{self, Context, RunConfig};
+use vnce::vnce_runtime::{Context, RunConfig};
 use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{Alignment, Block, BorderType, Clear, Line, Paragraph, Widget};
 
@@ -253,7 +253,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sounds: Sounds::new(),
     };
     let mut game = SceneStack::new(Title { time: 0.0 }, shared);
-    vnce_runtime::run(&mut game, RunConfig::default())?;
+    vnce::run(&mut game, RunConfig::default())?;
     Ok(())
 }
 

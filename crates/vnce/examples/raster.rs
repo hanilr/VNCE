@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use vnce::vnce_core::{Buffer, Color, Rect, Size, Style};
 use vnce::vnce_raster::{BlitOptions, Canvas, PixelMode, Quality, RenderOptions, Rgba};
-use vnce::vnce_runtime::{self, Context, Game, RunConfig, RunError};
+use vnce::vnce_runtime::{Context, Game, RunConfig, RunError};
 use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind, KeyModifiers};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run(image: Option<Canvas>, all_modes: bool) -> Result<(), RunError> {
     let mut demo = Demo::new(image);
     demo.all_modes = all_modes;
-    vnce_runtime::run(&mut demo, RunConfig::default())
+    vnce::run(&mut demo, RunConfig::default())
 }
 
 /// A small original sprite.

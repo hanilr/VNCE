@@ -21,6 +21,8 @@ workspace = true
 [dependencies]
 bytemuck.workspace = true
 pollster.workspace = true
+vnce-core.workspace = true
 vnce-raster.workspace = true
+vnce-term.workspace = true
 wgpu.workspace = true
 

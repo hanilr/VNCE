@@ -123,8 +123,8 @@ impl Scene<Shared> for Title {
         Transition::None
     }
 
-    fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        self.backdrop.backdrop(shared, ctx, frame);
+    fn render(&mut self, shared: &Shared, _ctx: &Context, frame: &mut Frame<'_>) {
+        self.backdrop.backdrop(shared, frame);
         status_line(
             frame,
             &format!(
@@ -688,8 +688,8 @@ impl Scene<Shared> for End {
         Transition::None
     }
 
-    fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        self.backdrop.backdrop(shared, ctx, frame);
+    fn render(&mut self, shared: &Shared, _ctx: &Context, frame: &mut Frame<'_>) {
+        self.backdrop.backdrop(shared, frame);
         let code = course::code(self.seed);
         status_line(frame, &format!(" Glide · course {code}"));
         let (title, mut lines) = match self.outcome {

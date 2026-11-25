@@ -39,6 +39,42 @@ pub use vnce_game;
 #[cfg(feature = "audio")]
 pub use vnce_audio;
 
+/// A native window: the same games in their own window, cells and images drawn on the
+/// GPU. Requires the `window` feature.
+#[cfg(feature = "window")]
+pub use vnce_window;
+
+/// Runs `game` until it quits: in a native window when the program was built with the
+/// `window` feature, otherwise (and with `--terminal` on the command line or
+/// `VNCE_TERMINAL=1`) in the terminal. The window is titled after the program; use
+/// [`vnce_window::run`] for more control.
+///
+/// # Errors
+///
+/// Returns an error if the configuration is invalid, or the terminal or the window
+/// cannot be used.
+pub fn run<G: vnce_runtime::Game>(
+    game: &mut G,
+    config: vnce_runtime::RunConfig,
+) -> Result<(), vnce_runtime::RunError> {
+    #[cfg(feature = "window")]
+    if !wants_terminal() {
+        let title = std::env::current_exe()
+            .ok()
+            .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "vnce".to_owned());
+        return vnce_window::run(game, config, &vnce_window::WindowOptions::titled(title));
+    }
+    vnce_runtime::run(game, config)
+}
+
+/// Whether the terminal was asked for instead of the window.
+#[cfg(feature = "window")]
+fn wants_terminal() -> bool {
+    std::env::args().any(|arg| arg == "--terminal")
+        || std::env::var("VNCE_TERMINAL").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
 /// The tutorial in `docs/tutorial`: every code block in it is compiled (and, unless marked
 /// `no_run`, run) by `cargo test --doc -p vnce`. It uses the default features (`game`,
 /// `ui`), so it is only compiled with them.

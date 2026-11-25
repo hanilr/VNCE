@@ -51,7 +51,7 @@ use std::cell::{Cell, RefCell};
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{ActionMap, SaveFile, SceneStack};
 use vnce::vnce_raster::Canvas;
-use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
+use vnce::vnce_runtime::{Context, FpsLimit, RunConfig};
 use vnce::vnce_term::{Frame, GraphicsMode, KeyCode};
 use vnce::vnce_ui::{Alignment, Block, BorderType, Clear, Line, Padding, Paragraph, Widget};
 
@@ -254,7 +254,7 @@ impl Shared {
         save.set("gpu", gpu);
         save.set("msaa", msaa);
         save.set("frame_rate", ctx.fps_limit());
-        save.set("display", ctx.graphics_mode());
+        save.set(display_key(ctx), ctx.graphics_mode());
         for (action, name) in ACTIONS {
             save.set_bindings(&format!("keys.{name}"), self.controls.bindings(action));
         }
@@ -279,7 +279,7 @@ impl Shared {
         }
         if let Some(mode) = self
             .save
-            .get::<GraphicsMode>("display")
+            .get::<GraphicsMode>(display_key(ctx))
             .filter(|mode| self.modes.contains(mode))
         {
             ctx.set_graphics_mode(mode);
@@ -297,6 +297,16 @@ impl Shared {
     }
 }
 
+/// The save file key of the display method: a native window keeps its own, so a method
+/// chosen in a terminal is not used in the window and the other way round.
+fn display_key(ctx: &Context) -> &'static str {
+    if ctx.terminal_info().native_window {
+        "display.window"
+    } else {
+        "display"
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| args.iter().any(|a| a == name);
@@ -309,7 +319,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut game = SceneStack::new(title, shared);
     let mut config = RunConfig::default();
     config.terminal.mouse_capture = true;
-    vnce_runtime::run(&mut game, config)?;
+    vnce::run(&mut game, config)?;
     Ok(())
 }
 
@@ -323,8 +333,8 @@ pub(crate) const PANEL: Color = Color::Rgb(16, 22, 34);
 
 /// The area for the world (between the status line and the two bottom lines), the size
 /// it is rendered at (the render resolution applied) and its aspect ratio.
-pub(crate) fn view(shared: &Shared, ctx: &Context, frame: &Frame<'_>) -> (Rect, u32, u32, f32) {
-    let size = ctx.size();
+pub(crate) fn view(shared: &Shared, frame: &Frame<'_>) -> (Rect, u32, u32, f32) {
+    let size = frame.area();
     let area = Rect::new(0, 1, size.width, size.height.saturating_sub(3));
     let (width, height) = frame.image_pixel_size(area);
     if width == 0 || height == 0 {

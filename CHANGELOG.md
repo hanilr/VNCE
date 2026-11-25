@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The `window` feature of `vnce`: `vnce::run` opens a game in a native window when built
+  with it (`--terminal` or `VNCE_TERMINAL=1` keep the terminal), and in the terminal
+  otherwise; `vnce::vnce_window` gives full control. Every example runs through
+  `vnce::run`; games keep the display method of the window and of the terminal apart in
+  their save files.
+- GPU pictures in a window without a readback: a process has one GPU device
+  (`Gpu::shared`, `Gpu::share`, `Gpu::from_wgpu`, `Gpu::instance`); a window that draws
+  with it marks it (`Gpu::set_presenting`, `Gpu::presents`), and
+  `RenderTarget::show(gpu, frame, area, canvas)` then hands the texture itself to the
+  window (`RenderTarget::image`), else reads it back and draws it. `gpu_cube` and
+  `gpu_shader` use it; Glide draws its sky straight into the picture on the GPU and lays
+  the meshes over it in a window, with only the instruments drawn on the CPU.
+  `ShaderQuad::set_params` passes four `vec4` of the program's own values
+  (`globals.params`), and `ExternalImage::premultiplied` marks textures drawn on a
+  transparent background.
 - `vnce-window` (`vnce_window`): games in a native window. `winit` for the window and
   its events (pumped from the engine's own loop), `wgpu` to draw: every cell in one
   instanced draw from a glyph atlas of the bundled JetBrains Mono (SIL Open Font
@@ -209,6 +224,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Gpu::new` returns the process's GPU when there already is one (one device for the
+  game and its window). In a native window, images are drawn under the cells: text,
+  menus and popups stay visible over a picture, and cells with the default background let
+  it through.
 - **Breaking:** `Event` has a `Closed` variant, `GraphicsMode` a `Native` variant and
   `TerminalInfo` a `native_window` field; exhaustive matches and struct literals must
   add them.

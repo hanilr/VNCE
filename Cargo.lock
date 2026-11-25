@@ -2128,6 +2128,7 @@ dependencies = [
  "vnce-runtime",
  "vnce-term",
  "vnce-ui",
+ "vnce-window",
 ]
 
 [[package]]
@@ -2162,7 +2163,9 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "pollster",
+ "vnce-core",
  "vnce-raster",
+ "vnce-term",
  "wgpu",
 ]
 

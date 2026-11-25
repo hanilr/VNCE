@@ -34,7 +34,7 @@ use vnce::vnce_game::{
     move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Font, Rgba};
-use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
+use vnce::vnce_runtime::{Context, FpsLimit, RunConfig};
 use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{
     Alignment, Block, BorderType, Clear, Line, List, ListState, Paragraph, StatefulWidget, Widget,
@@ -91,7 +91,7 @@ impl Shared {
         save.set("music_volume", self.music_volume);
         save.set("effects_volume", self.effects_volume);
         save.set("frame_rate", ctx.fps_limit());
-        save.set("display", ctx.graphics_mode());
+        save.set(display_key(ctx), ctx.graphics_mode());
         for (action, name) in ACTIONS {
             save.set_bindings(&format!("keys.{name}"), self.controls.bindings(action));
         }
@@ -110,7 +110,7 @@ impl Shared {
             // Every offered rate is valid.
             let _ = ctx.set_fps_limit(limit);
         }
-        let mode = self.save.get::<GraphicsMode>("display");
+        let mode = self.save.get::<GraphicsMode>(display_key(ctx));
         if let Some(mode) = mode.filter(|mode| self.modes.contains(mode)) {
             ctx.set_graphics_mode(mode);
         }
@@ -137,6 +137,16 @@ fn default_controls() -> ActionMap<Action> {
         .bind(Action::Method, 'g')
 }
 
+/// The save file key of the display method: a native window keeps its own, so a method
+/// chosen in a terminal is not used in the window and the other way round.
+fn display_key(ctx: &Context) -> &'static str {
+    if ctx.terminal_info().native_window {
+        "display.window"
+    } else {
+        "display"
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut controls = default_controls();
     let save = SaveFile::open("lantern");
@@ -158,7 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         save,
     };
     let mut game = SceneStack::new(Title::new(), shared);
-    vnce_runtime::run(&mut game, RunConfig::default())?;
+    vnce::run(&mut game, RunConfig::default())?;
     Ok(())
 }
 

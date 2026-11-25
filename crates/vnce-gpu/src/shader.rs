@@ -13,6 +13,7 @@ struct VnceGlobals {
     frame: u32,
     pixel_aspect: f32,
     aspect: f32,
+    params: array<vec4<f32>, 4>,
 }
 
 @group(0) @binding(0) var<uniform> globals: VnceGlobals;
@@ -39,8 +40,9 @@ struct Globals {
     frame: u32,
     pixel_aspect: f32,
     aspect: f32,
-    // Uniform buffers are sized in steps of 16 bytes.
+    // `params` starts on a 16-byte boundary.
     padding: [f32; 2],
+    params: [[f32; 4]; 4],
 }
 
 /// The complete WGSL module for a user `shade` function.
@@ -84,6 +86,8 @@ pub(crate) fn validate(source: &str) -> Result<(), GpuError> {
 ///   [`ShaderQuad::set_pixel_aspect`]) and `globals.aspect` the real width / height of the
 ///   whole image: use it to keep circles round in cell modes, for example
 ///   `(uv - 0.5) * vec2<f32>(globals.aspect, 1.0)`.
+/// - `globals.params` holds four `vec4<f32>` of the program's own values (see
+///   [`ShaderQuad::set_params`]), for example a camera.
 ///
 /// Helper functions, constants and structs may be defined next to `shade`. Names starting
 /// with `vnce_` / `Vnce` and the name `globals` are reserved.
@@ -93,6 +97,7 @@ pub struct ShaderQuad {
     uniforms: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     pixel_aspect: f32,
+    params: [[f32; 4]; 4],
 }
 
 impl ShaderQuad {
@@ -172,6 +177,7 @@ impl ShaderQuad {
             uniforms,
             bind_group,
             pixel_aspect: 1.0,
+            params: [[0.0; 4]; 4],
         })
     }
 
@@ -189,6 +195,12 @@ impl ShaderQuad {
         self.pixel_aspect
     }
 
+    /// Sets the values the shader reads from `globals.params` (four `vec4<f32>`, zero at
+    /// first) in the following renders.
+    pub fn set_params(&mut self, params: [[f32; 4]; 4]) {
+        self.params = params;
+    }
+
     /// Runs the shader for every pixel of `target`.
     #[allow(clippy::cast_precision_loss, reason = "texture sizes fit in f32")]
     pub fn render(&self, gpu: &Gpu, target: &RenderTarget, time: f32, frame: u32) {
@@ -199,6 +211,7 @@ impl ShaderQuad {
             pixel_aspect: self.pixel_aspect,
             aspect: target.aspect() * self.pixel_aspect,
             padding: [0.0; 2],
+            params: self.params,
         };
         gpu.queue()
             .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&globals));

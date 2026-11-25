@@ -256,6 +256,46 @@ impl Renderer {
         shown
     }
 
+    /// For a native window that draws with this GPU: the sky and the meshes of `view` as
+    /// two textures to lay over each other (nothing read back, nothing composed on the
+    /// CPU). `None` when the GPU is not in use or the window cannot show its textures.
+    #[cfg(feature = "gpu")]
+    pub fn render_layers(
+        &mut self,
+        terrain: &Terrain,
+        view: &View,
+        width: u32,
+        height: u32,
+    ) -> Option<[vnce::vnce_term::ExternalImage; 2]> {
+        let start = Instant::now();
+        self.forget_other_terrain(terrain);
+        let budget = self.budget;
+        let gpu = self
+            .gpu
+            .as_mut()
+            .filter(|gpu| self.use_gpu && gpu.presents())?;
+        let (stats, layers) = gpu.render_layers(terrain, view, width, height, budget);
+        self.stats = stats;
+        self.stats.milliseconds = start.elapsed().as_secs_f32() * 1000.0;
+        Some(layers)
+    }
+
+    #[cfg(not(feature = "gpu"))]
+    #[allow(
+        clippy::unused_self,
+        clippy::unnecessary_wraps,
+        reason = "same as the GPU version"
+    )]
+    pub fn render_layers(
+        &mut self,
+        _terrain: &Terrain,
+        _view: &View,
+        _width: u32,
+        _height: u32,
+    ) -> Option<[vnce::vnce_term::ExternalImage; 2]> {
+        None
+    }
+
     /// Draws with the GPU when it is in use; `None` otherwise.
     #[cfg(feature = "gpu")]
     fn render_gpu(
@@ -596,6 +636,7 @@ mod gpu {
         MeshRendererOptions, MeshScene, Readback, RenderTarget, ShaderQuad, Vertex,
     };
     use vnce::vnce_raster::{Canvas, Rgba};
+    use vnce::vnce_term::ExternalImage;
 
     use super::{Models, Stats, View, compose_sky};
     use crate::math::{Camera, Mat4};
@@ -629,6 +670,9 @@ mod gpu {
         sky: ShaderQuad,
         sky_target: RenderTarget,
         sky_canvas: Canvas,
+        /// The sky drawn straight into the picture, for a native window.
+        screen_sky: ShaderQuad,
+        screen_target: RenderTarget,
         pub name: String,
     }
 
@@ -636,6 +680,8 @@ mod gpu {
         pub fn new(models: &Models, msaa: u32) -> Result<Self, String> {
             let gpu = Gpu::new(GpuOptions::default().with_env()).map_err(|e| e.to_string())?;
             let sky = ShaderQuad::new(&gpu, sky::SKY_SHADER).map_err(|e| e.to_string())?;
+            let screen_sky =
+                ShaderQuad::new(&gpu, &sky::screen_sky_shader()).map_err(|e| e.to_string())?;
             let mut list = vec![
                 (super::Model::Craft, mesh(&gpu, &models.craft)),
                 (super::Model::Shadow, mesh(&gpu, &models.shadow)),
@@ -658,6 +704,8 @@ mod gpu {
                 sky_target: RenderTarget::new(&gpu, GPU_PANORAMA.0, GPU_PANORAMA.1)
                     .with_readback(Readback::Pipelined),
                 sky_canvas: Canvas::new(0, 0),
+                screen_sky,
+                screen_target: RenderTarget::new(&gpu, 1, 1),
                 gpu,
             })
         }
@@ -697,17 +745,51 @@ mod gpu {
                 });
         }
 
-        #[allow(clippy::too_many_arguments, reason = "the renderer's parts")]
-        pub fn render(
+        /// Whether a native window shows this GPU's textures directly.
+        pub fn presents(&self) -> bool {
+            self.gpu.presents()
+        }
+
+        /// For a native window: the sky and the meshes as two textures to lay over each
+        /// other, nothing read back.
+        pub fn render_layers(
             &mut self,
             terrain: &Terrain,
             view: &View,
             width: u32,
             height: u32,
             budget: usize,
-            cpu_panorama: &mut Canvas,
-            canvas: &mut Canvas,
-        ) -> (Camera, Stats) {
+        ) -> (Stats, [ExternalImage; 2]) {
+            let stats = self.draw_meshes(terrain, view, width, height, budget);
+            // A readback started before belongs to another picture.
+            self.pending = None;
+            self.image_camera = None;
+            if (self.screen_target.width(), self.screen_target.height()) != (width, height) {
+                self.screen_target.resize(&self.gpu, width, height);
+            }
+            self.screen_sky
+                .set_params(sky::screen_params(&view.camera, view.light.phase));
+            self.screen_sky
+                .render(&self.gpu, &self.screen_target, view.time, 0);
+            (
+                stats,
+                [
+                    self.screen_target.image(),
+                    self.target.image().premultiplied(true),
+                ],
+            )
+        }
+
+        /// Draws the meshes of `view` into the mesh target (transparent where there are
+        /// none, faded out in the fog).
+        fn draw_meshes(
+            &mut self,
+            terrain: &Terrain,
+            view: &View,
+            width: u32,
+            height: u32,
+            budget: usize,
+        ) -> Stats {
             let camera = view.camera;
             self.build(terrain, &camera, budget);
             let reach = self.chunks.radius * CHUNK_SIZE;
@@ -753,6 +835,23 @@ mod gpu {
             }
             self.renderer
                 .render(&self.gpu, &self.target, Rgba::TRANSPARENT, &draws);
+            stats
+        }
+
+        #[allow(clippy::too_many_arguments, reason = "the renderer's parts")]
+        pub fn render(
+            &mut self,
+            terrain: &Terrain,
+            view: &View,
+            width: u32,
+            height: u32,
+            budget: usize,
+            cpu_panorama: &mut Canvas,
+            canvas: &mut Canvas,
+        ) -> (Camera, Stats) {
+            let camera = view.camera;
+            let light = &view.light;
+            let stats = self.draw_meshes(terrain, view, width, height, budget);
             // The picture that arrives is the one rendered last time, with its camera.
             if matches!(self.target.read_into(&self.gpu, &mut self.image), Ok(true)) {
                 self.image_camera = self.pending;

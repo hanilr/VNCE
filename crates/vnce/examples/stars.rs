@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 
 use vnce::vnce_core::{Buffer, Color, Position, Rect, Style};
 use vnce::vnce_game::Rng;
-use vnce::vnce_runtime::{self, Context, FpsLimit, Game, RunConfig, RunError};
+use vnce::vnce_runtime::{Context, FpsLimit, Game, RunConfig, RunError};
 use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
 
 /// Player speed in cells per second. Terminal cells are about twice as tall as they are
@@ -43,7 +43,7 @@ const FPS_STEPS: [FpsLimit; 7] = [
 ];
 
 fn main() -> Result<(), RunError> {
-    vnce_runtime::run(&mut StarsGame::new(), RunConfig::default())
+    vnce::run(&mut StarsGame::new(), RunConfig::default())
 }
 
 /// A position in cells, with sub-cell precision.

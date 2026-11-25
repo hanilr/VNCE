@@ -82,6 +82,18 @@ native window instead of writing escape sequences:
 7. Bench (window against Kitty), tests (headless where possible: atlas, drawn glyphs, key
    mapping, rendering into a texture on a software adapter), docs and closing.
 
+## Progress
+
+- Step 2: `Backend::present`, `GraphicsMode::Native`, `Frame::draw_texture`,
+  `Event::Closed` (19f254e).
+- Steps 3 and 4: `vnce-window` with the cell renderer, images, resize, scale factors,
+  fullscreen, icon and a screenshot option (8a5ccaa); `vnce_raster::block_pattern` for
+  the drawn quadrants, sextants and octants.
+- Steps 5 and 6 together, as they were tested together: the shared GPU and
+  `RenderTarget::show`, `ShaderQuad` params and premultiplied textures, images under the
+  cells, `vnce::run` with the `window` feature, every example through it, and Glide's
+  layered sky and meshes in a window.
+
 ## Dependencies (approved)
 
 - `winit` for windows and events (Apache-2.0).

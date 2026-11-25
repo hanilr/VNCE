@@ -19,6 +19,7 @@ pub struct ExternalImage {
     width: u32,
     height: u32,
     handle: Arc<dyn Any + Send + Sync>,
+    premultiplied: bool,
 }
 
 impl ExternalImage {
@@ -29,7 +30,22 @@ impl ExternalImage {
             width,
             height,
             handle,
+            premultiplied: false,
         }
+    }
+
+    /// Marks the colors as premultiplied by their alpha (as GPU drawing on a transparent
+    /// background leaves them), so they are laid over what is below correctly.
+    #[must_use]
+    pub fn premultiplied(mut self, premultiplied: bool) -> Self {
+        self.premultiplied = premultiplied;
+        self
+    }
+
+    /// Whether the colors are premultiplied by their alpha.
+    #[must_use]
+    pub fn is_premultiplied(&self) -> bool {
+        self.premultiplied
     }
 
     /// Size in pixels.
@@ -50,6 +66,7 @@ impl fmt::Debug for ExternalImage {
         f.debug_struct("ExternalImage")
             .field("width", &self.width)
             .field("height", &self.height)
+            .field("premultiplied", &self.premultiplied)
             .finish_non_exhaustive()
     }
 }
@@ -66,14 +83,6 @@ pub(crate) enum NativeRequest {
         area: Rect,
         image: ExternalImage,
     },
-}
-
-impl NativeRequest {
-    pub(crate) fn area(&self) -> Rect {
-        match self {
-            Self::Pixels { area, .. } | Self::External { area, .. } => *area,
-        }
-    }
 }
 
 /// An image shown in the last frame (kept to find unchanged images).

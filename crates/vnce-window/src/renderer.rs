@@ -1,5 +1,7 @@
-//! Drawing a frame on the GPU: every cell in one instanced draw (background, glyph from
-//! the atlas, underline and strike-through), then the images as textured quads.
+//! Drawing a frame on the GPU: the images as textured quads, then every cell in one
+//! instanced draw over them (background, glyph from the atlas, underline and
+//! strike-through). Cells with the default background are transparent, so menus and text
+//! stay readable over a picture and blank cells let it through.
 //!
 //! Colors are written as they are (sRGB values into a non-sRGB view), like a terminal
 //! mixes them, so a frame looks the same in a window and in a terminal.
@@ -80,6 +82,10 @@ fn fs(in: Out) -> @location(0) vec4<f32> {
     }
     if (in.flags & 8u) != 0u && abs(y - g.cell.y * 0.55) < thickness * 0.5 + 0.5 {
         coverage = 1.0;
+    }
+    // A default background is transparent: only the glyph covers what is below.
+    if in.bg.a < 0.5 {
+        return vec4<f32>(in.fg.rgb, coverage);
     }
     return vec4<f32>(mix(in.bg.rgb, in.fg.rgb, coverage), 1.0);
 }
@@ -162,6 +168,8 @@ struct Picture {
 pub struct Renderer {
     cells: wgpu::RenderPipeline,
     images: wgpu::RenderPipeline,
+    /// For pictures whose colors are premultiplied by their alpha.
+    premultiplied: wgpu::RenderPipeline,
     globals: wgpu::Buffer,
     cell_group: wgpu::BindGroup,
     image_layout: wgpu::BindGroupLayout,
@@ -282,21 +290,25 @@ impl Renderer {
                     0 => Uint16x2, 1 => Uint16x4, 2 => Unorm8x4, 3 => Unorm8x4, 4 => Uint32
                 ],
             },
-            None,
-        );
-        let images = pipeline(
-            device,
-            format,
-            "vnce_window images",
-            IMAGE_SHADER,
-            &[Some(&globals_layout), Some(&image_layout)],
-            wgpu::VertexBufferLayout {
-                array_stride: 16,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x4],
-            },
             Some(wgpu::BlendState::ALPHA_BLENDING),
         );
+        let image_pipeline = |blend| {
+            pipeline(
+                device,
+                format,
+                "vnce_window images",
+                IMAGE_SHADER,
+                &[Some(&globals_layout), Some(&image_layout)],
+                wgpu::VertexBufferLayout {
+                    array_stride: 16,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x4],
+                },
+                Some(blend),
+            )
+        };
+        let images = image_pipeline(wgpu::BlendState::ALPHA_BLENDING);
+        let premultiplied = image_pipeline(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("vnce_window pictures"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -306,6 +318,7 @@ impl Renderer {
         Self {
             cells,
             images,
+            premultiplied,
             globals,
             cell_group,
             image_layout,
@@ -353,6 +366,10 @@ impl Renderer {
     }
 
     /// Draws `frame` into `view` (cleared to the default background first).
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one frame's uploads and draws, in order"
+    )]
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -380,7 +397,7 @@ impl Renderer {
         // The images: their textures (uploaded when they changed) and rectangles.
         let mut rects: Vec<[f32; 4]> = Vec::new();
         let mut draws: Vec<Rect> = Vec::new();
-        let mut external: Vec<(usize, wgpu::BindGroup)> = Vec::new();
+        let mut external: Vec<(usize, wgpu::BindGroup, bool)> = Vec::new();
         for image in &frame.images {
             let (area, rect) = match *image {
                 ImageView::Pixels {
@@ -395,7 +412,8 @@ impl Renderer {
                     let Some(handle) = image.handle().downcast_ref::<wgpu::TextureView>() else {
                         continue;
                     };
-                    external.push((rects.len(), self.bind_picture(device, handle)));
+                    let group = self.bind_picture(device, handle);
+                    external.push((rects.len(), group, image.is_premultiplied()));
                     (area, cell_rect(area, layout))
                 }
             };
@@ -438,28 +456,32 @@ impl Renderer {
                 })],
                 ..wgpu::RenderPassDescriptor::default()
             });
-            if let Some(buffer) = instances {
-                pass.set_pipeline(&self.cells);
-                pass.set_bind_group(0, &self.cell_group, &[]);
-                pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(0..6, 0..self.data.len() as u32);
-            }
             if let Some(buffer) = rect_buffer {
-                pass.set_pipeline(&self.images);
                 pass.set_bind_group(0, &self.globals_group, &[]);
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 for (index, area) in draws.iter().enumerate() {
-                    let group = external
-                        .iter()
-                        .find(|(i, _)| *i == index)
-                        .map(|(_, group)| group)
+                    let found = external.iter().find(|(i, _, _)| *i == index);
+                    let premultiplied = found.is_some_and(|(_, _, p)| *p);
+                    let group = found
+                        .map(|(_, group, _)| group)
                         .or_else(|| self.pictures.get(area).map(|p| &p.bind_group));
                     if let Some(group) = group {
+                        pass.set_pipeline(if premultiplied {
+                            &self.premultiplied
+                        } else {
+                            &self.images
+                        });
                         pass.set_bind_group(1, group, &[]);
                         let i = index as u32;
                         pass.draw(0..6, i..i + 1);
                     }
                 }
+            }
+            if let Some(buffer) = instances {
+                pass.set_pipeline(&self.cells);
+                pass.set_bind_group(0, &self.cell_group, &[]);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..6, 0..self.data.len() as u32);
             }
         }
         queue.submit([encoder.finish()]);
@@ -484,14 +506,18 @@ impl Renderer {
                 };
                 let mut fg = rgb(cell.fg, DEFAULT_FG);
                 let mut bg = rgb(cell.bg, DEFAULT_BG);
-                if modifiers.contains(Modifiers::REVERSE) {
+                let reverse = modifiers.contains(Modifiers::REVERSE);
+                // The default background lets images through.
+                let opaque = cell.bg != Color::Reset || reverse;
+                if reverse {
                     std::mem::swap(&mut fg, &mut bg);
                 }
                 if modifiers.contains(Modifiers::DIM) {
                     fg = [0, 1, 2]
                         .map(|i| ((u16::from(fg[i]) * 11 + u16::from(bg[i]) * 9) / 20) as u8);
                 }
-                if modifiers.contains(Modifiers::HIDDEN) {
+                let hidden = modifiers.contains(Modifiers::HIDDEN);
+                if hidden {
                     fg = bg;
                 }
                 let style = GlyphStyle {
@@ -499,7 +525,7 @@ impl Renderer {
                     italic: modifiers.contains(Modifiers::ITALIC),
                 };
                 let symbol = cell.symbol();
-                let slot = if symbol == " " {
+                let slot = if symbol == " " || hidden {
                     Slot::default()
                 } else {
                     self.atlas.slot(&self.font, symbol, style, columns)
@@ -515,7 +541,7 @@ impl Renderer {
                     cell: [x, y],
                     glyph: [slot.x, slot.y, slot.width, slot.height],
                     fg: [fg[0], fg[1], fg[2], 255],
-                    bg: [bg[0], bg[1], bg[2], 255],
+                    bg: [bg[0], bg[1], bg[2], if opaque { 255 } else { 0 }],
                     flags,
                 });
             }

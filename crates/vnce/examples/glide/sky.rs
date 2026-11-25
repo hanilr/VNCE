@@ -237,9 +237,9 @@ fn ease(a: f32, b: f32, x: f32) -> f32 {
     return smoothstep(a, b, x);
 }
 
-fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
+// The sky (linear color) along the unit vector `dir` at day progress `phase`.
+fn sky(dir: vec3<f32>, phase: f32, time: f32) -> vec3<f32> {
     let pi = 3.14159265;
-    let phase = f32(globals.frame) / 100000.0;
     let a = phase * pi;
     let sun = normalize(vec3<f32>(cos(a), sin(a) * 0.9 + 0.02, sin(a) * 0.45));
     let e = sun.y;
@@ -252,9 +252,6 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
     let horizon = mix(vec3<f32>(0.62, 0.42, 0.36), vec3<f32>(0.6, 0.72, 0.86), day);
     let warm = vec3<f32>(0.95, 0.42, 0.18);
 
-    let azimuth = uv.x * 2.0 * pi;
-    let elevation = pi / 2.0 - uv.y * (pi / 2.0 + 0.35);
-    let dir = vec3<f32>(sin(azimuth) * cos(elevation), sin(elevation), -cos(azimuth) * cos(elevation));
     let up = dir.y;
     let toward = max(dot(dir, sun), 0.0);
     let glow = pow(toward, 6.0) * golden;
@@ -278,9 +275,56 @@ fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
     let halo = pow(toward, 300.0) * 0.7 + pow(toward, 40.0) * 0.18 * (1.0 - golden * 0.5);
     let disk = ease(0.9993, 0.9996, toward) * 6.0;
     color += sun_color * (halo + disk);
-    return vec4<f32>(color, 1.0);
+    return color;
+}
+
+fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {
+    let pi = 3.14159265;
+    let azimuth = uv.x * 2.0 * pi;
+    let elevation = pi / 2.0 - uv.y * (pi / 2.0 + 0.35);
+    let dir = vec3<f32>(sin(azimuth) * cos(elevation), sin(elevation), -cos(azimuth) * cos(elevation));
+    return vec4<f32>(sky(dir, f32(globals.frame) / 100000.0, time), 1.0);
 }
 ";
+
+/// The same sky drawn straight into the picture (for a native window, where nothing is
+/// read back): every pixel's view direction comes from the camera in `globals.params`
+/// (see [`screen_params`]).
+#[cfg_attr(
+    not(feature = "gpu"),
+    allow(dead_code, reason = "the GPU renderer uses it")
+)]
+pub fn screen_sky_shader() -> String {
+    let common = SKY_SHADER.split("fn shade(").next().unwrap_or(SKY_SHADER);
+    format!(
+        "{common}
+fn shade(uv: vec2<f32>, time: f32, resolution: vec2<f32>) -> vec4<f32> {{
+    let s = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let dir = normalize(globals.params[0].xyz + globals.params[1].xyz * s.x + globals.params[2].xyz * s.y);
+    return vec4<f32>(sky(dir, globals.params[3].x, time), 1.0);
+}}
+"
+    )
+}
+
+/// The camera and the day's progress for [`screen_sky_shader`]: forward, right and up
+/// (scaled to the picture's edges), and the phase.
+#[cfg_attr(
+    not(feature = "gpu"),
+    allow(dead_code, reason = "the GPU renderer uses it")
+)]
+pub fn screen_params(camera: &crate::math::Camera, phase: f32) -> [[f32; 4]; 4] {
+    let tan = (crate::math::FOV_Y / 2.0).tan();
+    let right = crate::math::scale(camera.right(), tan * camera.aspect);
+    let up = crate::math::scale(camera.up, tan);
+    let f = camera.forward;
+    [
+        [f[0], f[1], f[2], 0.0],
+        [right[0], right[1], right[2], 0.0],
+        [up[0], up[1], up[2], 0.0],
+        [phase, 0.0, 0.0, 0.0],
+    ]
+}
 
 #[cfg(test)]
 mod tests {

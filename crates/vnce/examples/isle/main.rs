@@ -45,7 +45,7 @@ use std::cell::{Cell, RefCell};
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{ActionMap, SaveFile, SceneStack};
 use vnce::vnce_raster::{Canvas, Font, Rgba};
-use vnce::vnce_runtime::{self, Context, FpsLimit, RunConfig};
+use vnce::vnce_runtime::{Context, FpsLimit, RunConfig};
 use vnce::vnce_term::input::MouseButton;
 use vnce::vnce_term::{Frame, GraphicsMode, KeyCode};
 use vnce::vnce_ui::{Alignment, Block, BorderType, Clear, Line, Padding, Paragraph, Widget};
@@ -227,7 +227,7 @@ impl Shared {
         save.set("map", self.map);
         save.set("gpu", gpu);
         save.set("frame_rate", ctx.fps_limit());
-        save.set("display", ctx.graphics_mode());
+        save.set(display_key(ctx), ctx.graphics_mode());
         for (action, name) in ACTIONS {
             save.set_bindings(&format!("keys.{name}"), self.controls.bindings(action));
         }
@@ -252,7 +252,7 @@ impl Shared {
         }
         if let Some(mode) = self
             .save
-            .get::<GraphicsMode>("display")
+            .get::<GraphicsMode>(display_key(ctx))
             .filter(|mode| self.modes.contains(mode))
         {
             ctx.set_graphics_mode(mode);
@@ -270,6 +270,16 @@ impl Shared {
     }
 }
 
+/// The save file key of the display method: a native window keeps its own, so a method
+/// chosen in a terminal is not used in the window and the other way round.
+fn display_key(ctx: &Context) -> &'static str {
+    if ctx.terminal_info().native_window {
+        "display.window"
+    } else {
+        "display"
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| args.iter().any(|a| a == name);
@@ -282,7 +292,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut game = SceneStack::new(title, shared);
     let mut config = RunConfig::default();
     config.terminal.mouse_capture = true;
-    vnce_runtime::run(&mut game, config)?;
+    vnce::run(&mut game, config)?;
     Ok(())
 }
 

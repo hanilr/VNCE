@@ -1,8 +1,10 @@
 //! Offscreen render targets and reading them back into a [`Canvas`].
 
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
+use vnce_core::Rect;
 use vnce_raster::{Canvas, Rgba};
+use vnce_term::{ExternalImage, Frame};
 
 use crate::{Gpu, GpuError, color};
 
@@ -44,6 +46,9 @@ struct Pending {
 pub struct RenderTarget {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
+    /// The same texture without sRGB conversion: a native window samples it as it stores
+    /// colors.
+    plain: wgpu::TextureView,
     width: u32,
     height: u32,
     readback: Readback,
@@ -61,10 +66,11 @@ impl RenderTarget {
     #[must_use]
     pub fn new(gpu: &Gpu, width: u32, height: u32) -> Self {
         let (width, height) = clamp_size(gpu, width, height);
-        let (texture, view) = create_texture(gpu, width, height);
+        let (texture, view, plain) = create_texture(gpu, width, height);
         Self {
             texture,
             view,
+            plain,
             width,
             height,
             readback: Readback::default(),
@@ -103,9 +109,10 @@ impl RenderTarget {
             return;
         }
         self.drop_pending();
-        let (texture, view) = create_texture(gpu, width, height);
+        let (texture, view, plain) = create_texture(gpu, width, height);
         self.texture = texture;
         self.view = view;
+        self.plain = plain;
         self.width = width;
         self.height = height;
         self.buffers = [None, None];
@@ -140,6 +147,40 @@ impl RenderTarget {
     #[must_use]
     pub fn view(&self) -> &wgpu::TextureView {
         &self.view
+    }
+
+    /// Shows the image in `area` of `frame`: in a native window that draws with this GPU
+    /// the texture itself is shown, without reading it back (the fastest way); otherwise
+    /// it is read into `canvas` ([`RenderTarget::read_into`]) and drawn with
+    /// `Frame::draw_image`. Returns whether something was shown (a pipelined readback has
+    /// nothing in its first frame).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpuError::Readback`] when reading back fails.
+    pub fn show(
+        &mut self,
+        gpu: &Gpu,
+        frame: &mut Frame<'_>,
+        area: Rect,
+        canvas: &mut Canvas,
+    ) -> Result<bool, GpuError> {
+        if frame.accepts_textures() && gpu.presents() {
+            return Ok(frame.draw_texture(area, self.image()));
+        }
+        let updated = self.read_into(gpu, canvas)?;
+        if (canvas.width(), canvas.height()) == (self.width, self.height) {
+            frame.draw_image(area, canvas);
+            return Ok(true);
+        }
+        Ok(updated)
+    }
+
+    /// The texture as an image for `Frame::draw_texture` (for a native window that draws
+    /// with this GPU; see [`Gpu::presents`]).
+    #[must_use]
+    pub fn image(&self) -> ExternalImage {
+        ExternalImage::new(self.width, self.height, Arc::new(self.plain.clone()))
     }
 
     /// Fills the target with `color`.
@@ -306,7 +347,11 @@ fn clamp_size(gpu: &Gpu, width: u32, height: u32) -> (u32, u32) {
     (width.clamp(1, max), height.clamp(1, max))
 }
 
-fn create_texture(gpu: &Gpu, width: u32, height: u32) -> (wgpu::Texture, wgpu::TextureView) {
+fn create_texture(
+    gpu: &Gpu,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::TextureView) {
     let texture = gpu.device().create_texture(&wgpu::TextureDescriptor {
         label: Some("vnce_gpu render target"),
         size: wgpu::Extent3d {
@@ -322,10 +367,14 @@ fn create_texture(gpu: &Gpu, width: u32, height: u32) -> (wgpu::Texture, wgpu::T
             | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::COPY_DST
             | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
+        view_formats: &[RenderTarget::FORMAT.remove_srgb_suffix()],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
+    let plain = texture.create_view(&wgpu::TextureViewDescriptor {
+        format: Some(RenderTarget::FORMAT.remove_srgb_suffix()),
+        ..wgpu::TextureViewDescriptor::default()
+    });
+    (texture, view, plain)
 }
 
 /// Bytes per row in a readback buffer: 4 bytes per pixel, rounded up to the 256-byte

@@ -23,7 +23,7 @@ use std::time::Instant;
 
 use vnce::vnce_core::{Buffer, Color, Rect, Style};
 use vnce::vnce_raster::{Canvas, PixelMode, RenderOptions, Rgba};
-use vnce::vnce_runtime::{self, Context, Game, RunConfig};
+use vnce::vnce_runtime::{Context, Game, RunConfig};
 use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{
     Alignment, Block, BorderType, Clear, Constraint, FpsOverlay, Gauge, Layout, Line, List,
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         last_frame: None,
         frame_times: VecDeque::new(),
     };
-    vnce_runtime::run(&mut demo, RunConfig::default())?;
+    vnce::run(&mut demo, RunConfig::default())?;
     Ok(())
 }
 
