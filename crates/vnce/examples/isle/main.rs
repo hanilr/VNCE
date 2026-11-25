@@ -30,19 +30,28 @@
 #![allow(dead_code, reason = "the game is built up step by step")]
 
 mod art;
+mod audio;
 mod bench;
 mod island;
 mod iso;
+mod life;
+mod minimap;
 mod play;
+mod sky;
+mod visuals;
+
+use std::cell::RefCell;
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{ActionMap, SceneStack};
-use vnce::vnce_raster::Canvas;
+use vnce::vnce_raster::{Canvas, Font, Rgba};
 use vnce::vnce_runtime::{self, Context, RunConfig};
 use vnce::vnce_term::input::MouseButton;
 use vnce::vnce_term::{Frame, KeyCode};
 
+use crate::audio::Sounds;
 use crate::iso::TILE_HEIGHT;
+use crate::visuals::Visuals;
 
 /// What the player can do; keys and mouse buttons are bound to these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,20 +132,38 @@ pub(crate) struct Shared {
     pub(crate) perf: bool,
     /// Show the minimap.
     pub(crate) map: bool,
+    /// Volumes in percent.
+    pub(crate) music_volume: u32,
+    pub(crate) effects_volume: u32,
+    pub(crate) sounds: Sounds,
+    /// The ocean picture; drawing needs `&mut`, scenes draw with `&Shared`.
+    pub(crate) visuals: RefCell<Visuals>,
 }
 
 impl Shared {
-    pub(crate) fn new() -> Self {
-        Self {
+    /// Shared data with the GPU ocean when `gpu` (and the feature) allow it, and sound when
+    /// `sound` is set and there is a device.
+    pub(crate) fn new(gpu: bool, sound: bool) -> Self {
+        let shared = Self {
             controls: default_controls(),
             perf: false,
             map: true,
-        }
+            music_volume: 60,
+            effects_volume: 80,
+            sounds: Sounds::new(sound),
+            visuals: RefCell::new(Visuals::new(gpu)),
+        };
+        shared
+            .sounds
+            .volumes(shared.music_volume, shared.effects_volume);
+        shared
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let shared = Shared::new();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let flag = |name: &str| args.iter().any(|a| a == name);
+    let shared = Shared::new(!flag("--cpu"), true);
     let mut game = SceneStack::new(play::Play::new(1), shared);
     let mut config = RunConfig::default();
     config.terminal.mouse_capture = true;
@@ -228,6 +255,22 @@ pub(crate) fn help_line(frame: &mut Frame<'_>, text: &str) {
         .set_string(0, y, text, Style::new().dim());
 }
 
+/// Pixel text with a dark shadow, readable on light and dark ground.
+pub(crate) fn shadow_text(
+    canvas: &mut Canvas,
+    x: i32,
+    y: i32,
+    text: &str,
+    color: Rgba,
+    scale: u32,
+) {
+    let font = Font::builtin();
+    let step = scale as i32;
+    let shadow = Rgba::new(8, 8, 14, color.a);
+    canvas.text_scaled(font, x + step, y + step, text, shadow, scale);
+    canvas.text_scaled(font, x, y, text, color, scale);
+}
+
 /// A time in tenths of a second as `m:ss.t`.
 pub(crate) fn format_time(tenths: u32) -> String {
     format!("{}:{:02}.{}", tenths / 600, tenths / 10 % 60, tenths % 10)
@@ -281,7 +324,7 @@ mod tests {
     #[test]
     fn smoke_test_walking_turning_zooming() {
         let mut game = bench::Limited {
-            game: SceneStack::new(play::Play::new(5), Shared::new()),
+            game: SceneStack::new(play::Play::new(5), Shared::new(false, false)),
             frames: 420,
         };
         let capabilities = Capabilities {
