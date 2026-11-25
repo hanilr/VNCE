@@ -171,6 +171,8 @@ pub(crate) struct Shared {
     pub(crate) visuals: RefCell<Visuals>,
     pub(crate) stats: RefCell<Stats>,
     pub(crate) save: SaveFile,
+    /// Set by the pause menu: the station below it goes back to the title.
+    pub(crate) to_title: bool,
 }
 
 impl Shared {
@@ -197,6 +199,7 @@ impl Shared {
             visuals: RefCell::new(visuals),
             stats: RefCell::new(Stats::default()),
             save,
+            to_title: false,
         }
     }
 
@@ -436,6 +439,31 @@ mod tests {
         press(&mut driver, 16_000, KeyCode::Esc);
         press(&mut driver, 16_300, KeyCode::Char('p'));
         run_with(&mut game, RunConfig::default(), terminal, driver).expect("the game runs");
+    }
+
+    /// Going back to the title from the pause menu leaves only the title on the scene
+    /// stack (the station does not stay below it).
+    #[test]
+    fn back_to_the_title_leaves_one_scene() {
+        let shared = Shared::new(SaveFile::new(), false, false);
+        let mut game = bench::Limited {
+            game: SceneStack::new(scenes::Title::new(), shared),
+            frames: 240,
+        };
+        let capabilities = Capabilities {
+            key_release_events: true,
+            ..Capabilities::default()
+        };
+        let terminal = Terminal::new(TestBackend::new(80, 24), capabilities)
+            .expect("the test backend has a size");
+        let mut driver = ScriptedDriver::new();
+        press(&mut driver, 300, KeyCode::Enter);
+        press(&mut driver, 1000, KeyCode::Char('p'));
+        press(&mut driver, 1300, KeyCode::Down);
+        press(&mut driver, 1600, KeyCode::Down);
+        press(&mut driver, 1900, KeyCode::Enter);
+        run_with(&mut game, RunConfig::default(), terminal, driver).expect("the game runs");
+        assert_eq!(game.game.len(), 1);
     }
 
     /// The title and the station with GPU pictures (CPU where there is no GPU): the first

@@ -236,7 +236,10 @@ impl Scene<Shared> for Pause {
                 Some(2) => {
                     shared.sounds.music(false);
                     shared.store(ctx);
-                    Transition::switch(Title::new())
+                    // A switch here would only replace this menu and leave the station
+                    // below it: the station switches to the title when it sees the request.
+                    shared.to_title = true;
+                    Transition::Pop
                 }
                 _ => Transition::Pop,
             };

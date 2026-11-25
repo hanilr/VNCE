@@ -199,6 +199,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `relay`: going back to the title from the pause menu no longer leaves the station on
+  the scene stack (a `Transition::Switch` from the menu replaced only the menu, so every
+  game played added a scene). The menu now asks the station to switch.
 - `cargo test --no-default-features` no longer fails on the tutorial: its doc-tests are
   compiled only with the `game` and `ui` features.
 - The core robustness test builds with Rust 1.87 again, and the `input::poll` timing test

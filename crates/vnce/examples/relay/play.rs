@@ -458,6 +458,9 @@ impl Scene<Shared> for Play {
         reason = "one update reads best as the game's steps in order"
     )]
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
+        if std::mem::take(&mut shared.to_title) {
+            return Transition::switch(scenes::Title::new());
+        }
         let input = ctx.input();
         let controls = &shared.controls;
         if controls.was_pressed(Action::Pause, input) {
