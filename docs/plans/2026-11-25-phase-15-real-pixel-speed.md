@@ -1,8 +1,8 @@
 # Plan: Phase 15 — Real-pixel speed
 
 **Date:** 2026-11-25
-**Status:** Approved (the user approved the whole plan of Phases 15–17 on 2026-11-25;
-commits stay local until the user asks to push)
+**Status:** Done (approved with Phases 15–17 on 2026-11-25; commits stay local until the
+user asks to push)
 
 ## Goal
 
@@ -70,3 +70,41 @@ three runs (values agreed within 5 %), ms per frame:
 
 `render` is almost entirely the hash. The Sixel `flush` of 23 ms for a 3.8 KB patch is
 also far too much; step 4 looks at where it goes.
+
+(Step 4 found it: Sixel images never cover the last row, so the 1200-pixel scenario image
+was scaled to 1180 pixels every frame. The scenarios now use `Frame::image_pixel_size`,
+as Relay does; the corrected baseline is in the results below.)
+
+## Results
+
+`perf --frames 100`, the old engine (d0b4a04) and the new one built with the same
+scenarios and run interleaved three times; the values agreed within 10 %, ms per frame:
+
+| Scenario | render before | render after | flush before | flush after |
+| --- | ---: | ---: | ---: | ---: |
+| Kitty, still | 7.7 | 1.2 | 0.04 | 0.04 |
+| Kitty, moving sprite | 8.4 | 0.6 | 2.4 | 2.0 |
+| Sixel, still | 7.5 | 1.2 | 0.06 | 0.06 |
+| Sixel, moving sprite | 8.2 | 0.6 | 2.9 | 1.5 |
+
+Relay `--bench` (GPU pictures, 600 frames, 200 × 60 cells), old and new run interleaved
+twice:
+
+| Display method | Per frame before | after | `render` before | after |
+| --- | ---: | ---: | ---: | ---: |
+| Kitty | 15.1 ms | 6.8 ms | 8.9 ms | 1.0 ms |
+| Sixel | 23.3 ms | 13.8 ms | 9.0 ms | 1.2 ms |
+
+The target (render about 3 ms) is met. Comparing an unchanged image is bound by memory
+bandwidth (about 1.2 ms for 9.4 MB); comparing in vectorized blocks did not help. The
+remaining Sixel time in Relay is encoding: the GPU scene changes most of the image every
+frame (161 KB per frame).
+
+## Implementation notes
+
+- A request without a canvas means "identical to the image on the screen"; the `hash`
+  fields are gone.
+- `ImageState::spare` keeps at most `SPARE_CANVASES` (2) canvases: replaced canvases,
+  canvases of deferred requests and of images that left the screen.
+- `PlacedImage::shown` is `None` when the canvas already fits its cells; the
+  `PlacedImage::shown()` method returns the canvas then.

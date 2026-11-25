@@ -79,6 +79,12 @@ Speed (a 720p frame on the development machine):
   (whole images beyond 70 %); Kitty images at exact cell resolution are split into up to
   8 × 8 tiles and only changed tiles are sent. A sprite moving over a 1600 × 880 picture
   costs about 5 KB per frame.
+- Finding out whether an image changed costs at most one pass over its pixels: it is
+  compared with the image on the screen (stopping at the first difference), not hashed.
+  Copies of changed images go into the memory of images that left the screen (up to two
+  are kept), and a Sixel image that already has the pixels of its cells is used as it is.
+  A full-screen 2000 × 1180 image costs about 1 ms per frame in `draw_image` instead of
+  8 ms (Phase 15).
 - In Windows Terminal (which applies the `"2;1` Sixel aspect ratio, checked in its source),
   Sixel images are sent at half height with rows two pixels tall (`VNCE_SIXEL_ASPECT`;
   only with an even cell height). Elsewhere, when writing a frame takes longer than 25 ms

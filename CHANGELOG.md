@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact scaling, synthesized music and a pad puzzle, and the widgets with Unicode text;
   light sprites are added into a layer that multiplies the scene. `--bench` measures it
   without a screen; a smoke test plays it.
+- `perf` example: full-screen Kitty and Sixel image scenarios (a still picture and a
+  moving sprite), timing `draw_image` and the flush separately.
 - Initial Cargo workspace with the `vnce` crate (imported as `vnce`).
 - Project documentation, license and tooling configuration.
 - `vnce-core` (`vnce_core`): geometry (`Position`, `Size`, `Rect`), `Color` with hex/name
@@ -159,6 +161,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Images with graphics protocols are cheaper every frame (Phase 15): `Frame::draw_image`
+  compares the image with the one on the screen instead of hashing it, copies changed
+  images into reused memory, and Sixel images that already fit their cells are not
+  copied. Relay's `render` with Kitty or Sixel dropped from about 9 ms to 1 ms per frame
+  (whole frame: Kitty 15.1 → 6.8 ms, Sixel 23.3 → 13.8 ms).
+- `Canvas` implements `Clone::clone_from` by copying into its existing pixel memory.
 - Faster per-frame work (Phase 12, measured with the `perf` example): a full-screen
   truecolor frame is written twice as fast, an empty frame or a mostly unchanged text
   screen 2.5 times as fast; cell widths are cached, diffing does not allocate and escape

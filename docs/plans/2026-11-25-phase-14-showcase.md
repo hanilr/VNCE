@@ -65,6 +65,8 @@ With `--cpu` the cell modes are about as fast (the GPU pictures are small). With
 graphics protocol the shown image is about 2000 × 1160 pixels; most of `render` is then
 spent inside `Frame::draw_image`, which hashes and copies the whole image every frame
 (about 9 MB). That is an engine cost, noted for a later, separately approved change.
+(Done in Phase 15: render is now about 1 ms with Kitty and Sixel; see
+`2026-11-25-phase-15-real-pixel-speed.md`.)
 
 ## Implementation notes
 
