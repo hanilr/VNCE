@@ -27,7 +27,7 @@ pub mod sprite;
 pub mod tilemap;
 pub mod timer;
 
-pub use actions::{ActionMap, Binding};
+pub use actions::{ActionMap, Binding, ParseBindingError};
 pub use camera::Camera;
 pub use collision::{Aabb, Movement, Sides, SpatialGrid, move_and_collide};
 pub use random::Rng;

@@ -131,6 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `vnce_raster::Font`: bitmap text on a canvas (`Canvas::text`, `Canvas::text_scaled`) with
   a built-in 5×7 font (printable ASCII and the Turkish letters), custom fonts from text
   art and `Font::measure`; `lantern` draws its title and a heads-up display with it.
+- Text names for keys and bindings: `KeyCode` and `vnce_game::Binding` implement `Display`
+  and `FromStr` (`w`, `Space`, `Esc`, `F5`, `mouse:left`, ...), so controls can be saved.
 
 ### Changed
 

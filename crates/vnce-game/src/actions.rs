@@ -1,5 +1,8 @@
 //! Key bindings: [`ActionMap`] maps keys and mouse buttons to game actions.
 
+use std::fmt;
+use std::str::FromStr;
+
 use vnce_runtime::InputState;
 use vnce_term::KeyCode;
 use vnce_term::input::MouseButton;
@@ -28,6 +31,50 @@ impl From<char> for Binding {
 impl From<MouseButton> for Binding {
     fn from(button: MouseButton) -> Self {
         Self::Mouse(button)
+    }
+}
+
+impl fmt::Display for Binding {
+    /// The key name (see [`KeyCode`]'s `Display`) or `mouse:left`, `mouse:right`,
+    /// `mouse:middle`. [`FromStr`] reads it back, for example from a save file.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Key(key) => write!(f, "{key}"),
+            Self::Mouse(MouseButton::Left) => f.write_str("mouse:left"),
+            Self::Mouse(MouseButton::Right) => f.write_str("mouse:right"),
+            Self::Mouse(MouseButton::Middle) => f.write_str("mouse:middle"),
+        }
+    }
+}
+
+/// The error returned when a binding name cannot be parsed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseBindingError(String);
+
+impl fmt::Display for ParseBindingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown key or mouse button {:?}", self.0)
+    }
+}
+
+impl std::error::Error for ParseBindingError {}
+
+impl FromStr for Binding {
+    type Err = ParseBindingError;
+
+    /// Parses a name written by `Display` (`w`, `Space`, `Esc`, `mouse:left`, ...).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let error = || ParseBindingError(s.to_owned());
+        let lower = s.to_ascii_lowercase();
+        if let Some(button) = lower.strip_prefix("mouse:") {
+            return match button {
+                "left" => Ok(Self::Mouse(MouseButton::Left)),
+                "right" => Ok(Self::Mouse(MouseButton::Right)),
+                "middle" => Ok(Self::Mouse(MouseButton::Middle)),
+                _ => Err(error()),
+            };
+        }
+        s.parse().map(Self::Key).map_err(|_| error())
     }
 }
 
@@ -160,6 +207,25 @@ mod tests {
     use vnce_term::{Event, KeyEvent, KeyEventKind, KeyModifiers};
 
     use super::*;
+
+    #[test]
+    fn bindings_round_trip() {
+        for binding in [
+            Binding::from('w'),
+            Binding::from(' '),
+            Binding::from(KeyCode::Esc),
+            Binding::from(KeyCode::F(3)),
+            Binding::from(MouseButton::Left),
+            Binding::from(MouseButton::Right),
+            Binding::from(MouseButton::Middle),
+        ] {
+            let name = binding.to_string();
+            assert_eq!(name.parse::<Binding>(), Ok(binding), "{name}");
+        }
+        assert_eq!("Mouse:Left".parse(), Ok(Binding::Mouse(MouseButton::Left)));
+        assert!("mouse:wheel".parse::<Binding>().is_err());
+        assert!("nothing".parse::<Binding>().is_err());
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Action {

@@ -112,6 +112,88 @@ pub enum KeyCode {
     Null,
 }
 
+/// Names of the keys without a character, as used by [`KeyCode`]'s `Display` and `FromStr`.
+const KEY_NAMES: [(KeyCode, &str); 23] = [
+    (KeyCode::Backspace, "Backspace"),
+    (KeyCode::Enter, "Enter"),
+    (KeyCode::Left, "Left"),
+    (KeyCode::Right, "Right"),
+    (KeyCode::Up, "Up"),
+    (KeyCode::Down, "Down"),
+    (KeyCode::Home, "Home"),
+    (KeyCode::End, "End"),
+    (KeyCode::PageUp, "PageUp"),
+    (KeyCode::PageDown, "PageDown"),
+    (KeyCode::Tab, "Tab"),
+    (KeyCode::BackTab, "BackTab"),
+    (KeyCode::Delete, "Delete"),
+    (KeyCode::Insert, "Insert"),
+    (KeyCode::Esc, "Esc"),
+    (KeyCode::CapsLock, "CapsLock"),
+    (KeyCode::ScrollLock, "ScrollLock"),
+    (KeyCode::NumLock, "NumLock"),
+    (KeyCode::PrintScreen, "PrintScreen"),
+    (KeyCode::Pause, "Pause"),
+    (KeyCode::Menu, "Menu"),
+    (KeyCode::KeypadBegin, "KeypadBegin"),
+    (KeyCode::Null, "Null"),
+];
+
+impl fmt::Display for KeyCode {
+    /// A short name that [`FromStr`](std::str::FromStr) reads back: the character itself
+    /// (`w`, `?`), `Space`, `F5`, or the key name (`Up`, `Enter`, `Esc`, ...).
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Char(' ') => f.write_str("Space"),
+            Self::Char(c) => write!(f, "{c}"),
+            Self::F(n) => write!(f, "F{n}"),
+            key => {
+                let name = KEY_NAMES
+                    .iter()
+                    .find(|(k, _)| *k == key)
+                    .map_or("?", |(_, name)| name);
+                f.write_str(name)
+            }
+        }
+    }
+}
+
+/// The error returned when a key name cannot be parsed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseKeyCodeError(String);
+
+impl fmt::Display for ParseKeyCodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown key name {:?}", self.0)
+    }
+}
+
+impl std::error::Error for ParseKeyCodeError {}
+
+impl std::str::FromStr for KeyCode {
+    type Err = ParseKeyCodeError;
+
+    /// Parses a name written by `Display`. A single character is that character key;
+    /// longer names ignore case (`esc`, `F5`, `pageup`, `space`).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+        if let (Some(c), None) = (chars.next(), chars.next()) {
+            return Ok(Self::Char(c));
+        }
+        let name = s.trim();
+        if name.eq_ignore_ascii_case("space") {
+            return Ok(Self::Char(' '));
+        }
+        if let Some(&(key, _)) = KEY_NAMES.iter().find(|(_, n)| n.eq_ignore_ascii_case(name)) {
+            return Ok(key);
+        }
+        name.strip_prefix(['F', 'f'])
+            .and_then(|number| number.parse().ok())
+            .map(Self::F)
+            .ok_or_else(|| ParseKeyCodeError(s.to_owned()))
+    }
+}
+
 /// Whether a key was pressed, repeated (held down) or released.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyEventKind {
@@ -377,6 +459,37 @@ fn convert_button(button: ct::MouseButton) -> MouseButton {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_names_round_trip() {
+        let mut keys: Vec<KeyCode> = KEY_NAMES.iter().map(|&(k, _)| k).collect();
+        keys.extend([
+            KeyCode::Char('w'),
+            KeyCode::Char('W'),
+            KeyCode::Char(' '),
+            KeyCode::Char('#'),
+            KeyCode::Char('='),
+            KeyCode::Char('ş'),
+            KeyCode::F(1),
+            KeyCode::F(12),
+        ]);
+        for key in keys {
+            let name = key.to_string();
+            assert_eq!(name.parse::<KeyCode>(), Ok(key), "{name}");
+        }
+    }
+
+    #[test]
+    fn key_names_ignore_case() {
+        assert_eq!("esc".parse(), Ok(KeyCode::Esc));
+        assert_eq!("PAGEUP".parse(), Ok(KeyCode::PageUp));
+        assert_eq!("f5".parse(), Ok(KeyCode::F(5)));
+        assert_eq!("space".parse(), Ok(KeyCode::Char(' ')));
+        assert_eq!(KeyCode::Char(' ').to_string(), "Space");
+        assert!("".parse::<KeyCode>().is_err());
+        assert!("Nope".parse::<KeyCode>().is_err());
+        assert!("F999".parse::<KeyCode>().is_err());
+    }
 
     #[test]
     fn key_events_are_converted() {

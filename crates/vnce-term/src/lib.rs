@@ -26,6 +26,6 @@ pub mod tmux;
 pub use backend::{Backend, CrosstermBackend, TestBackend};
 pub use capabilities::Capabilities;
 pub use graphics::{GraphicsMode, GraphicsProtocol};
-pub use input::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+pub use input::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, ParseKeyCodeError};
 pub use query::TerminalInfo;
 pub use terminal::{Frame, Terminal, TerminalOptions};
