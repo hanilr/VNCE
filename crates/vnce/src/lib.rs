@@ -38,3 +38,19 @@ pub use vnce_game;
 /// generated in code, and playback on the default device. Requires the `audio` feature.
 #[cfg(feature = "audio")]
 pub use vnce_audio;
+
+/// The tutorial in `docs/tutorial`: every code block in it is compiled (and, unless marked
+/// `no_run`, run) by `cargo test --doc -p vnce`.
+#[cfg(doctest)]
+mod tutorial {
+    #[doc = include_str!("../../../docs/tutorial/README.md")]
+    mod readme {}
+    #[doc = include_str!("../../../docs/tutorial/01-first-window.md")]
+    mod first_window {}
+    #[doc = include_str!("../../../docs/tutorial/02-game-loop-and-input.md")]
+    mod game_loop_and_input {}
+    #[doc = include_str!("../../../docs/tutorial/03-pixel-graphics.md")]
+    mod pixel_graphics {}
+    #[doc = include_str!("../../../docs/tutorial/04-sprites-and-animation.md")]
+    mod sprites_and_animation {}
+}
