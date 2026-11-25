@@ -221,17 +221,35 @@ fn indexed_to_rgb(index: u8) -> (u8, u8, u8) {
 
 /// Index of the nearest cube level for one channel.
 fn nearest_cube_level(value: u8) -> u8 {
-    let mut best = 0;
-    let mut best_distance = u8::MAX;
-    for (index, level) in (0u8..).zip(CUBE_LEVELS) {
-        let distance = value.abs_diff(level);
-        if distance < best_distance {
-            best = index;
-            best_distance = distance;
-        }
-    }
-    best
+    NEAREST_CUBE_LEVEL[usize::from(value)]
 }
+
+/// [`nearest_cube_level`] for every channel value, computed at compile time (it runs for
+/// every RGB color of every frame on 256-color terminals).
+const NEAREST_CUBE_LEVEL: [u8; 256] = {
+    let mut table = [0u8; 256];
+    let mut value = 0;
+    while value < 256 {
+        let mut best = 0;
+        let mut best_distance = u8::MAX;
+        let mut index = 0;
+        while index < CUBE_LEVELS.len() {
+            // `value < 256` and `index < 6`: both fit in a `u8`.
+            #[allow(clippy::cast_possible_truncation, reason = "value < 256, index < 6")]
+            let distance = (value as u8).abs_diff(CUBE_LEVELS[index]);
+            if distance < best_distance {
+                #[allow(clippy::cast_possible_truncation, reason = "index < 6")]
+                let level = index as u8;
+                best = level;
+                best_distance = distance;
+            }
+            index += 1;
+        }
+        table[value] = best;
+        value += 1;
+    }
+    table
+};
 
 /// Nearest entry of the 256-color palette, ignoring entries 0..=15 (their real colors
 /// depend on the terminal theme).
@@ -358,6 +376,22 @@ impl std::error::Error for ParseColorError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nearest_cube_level_table_matches_the_levels() {
+        for value in 0..=255u8 {
+            let best = CUBE_LEVELS
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, level)| value.abs_diff(**level))
+                .map(|(index, _)| index);
+            assert_eq!(
+                Some(usize::from(nearest_cube_level(value))),
+                best,
+                "{value}"
+            );
+        }
+    }
 
     #[test]
     fn parse_hex() {
