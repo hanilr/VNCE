@@ -144,6 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `lantern`: the cave floor uses four randomly placed tile variants (specks, a pebble, a
+  crack) instead of one repeating tile.
 - Minimum supported Rust version raised from 1.85 to 1.87 (required by `wgpu` 30).
 
 ### Fixed

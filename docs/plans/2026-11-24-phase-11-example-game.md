@@ -1,7 +1,7 @@
 # Plan: Phase 11 — Example game and tutorial
 
 **Date:** 2026-11-24
-**Status:** Approved; the game is done, the rest is planned for the next session
+**Status:** Approved; the game and the engine gaps are done, the tutorial is next
 
 ## Goal
 
@@ -36,12 +36,18 @@ and volume settings, sound and music with `--features audio`.
   afterwards. An API that returns a copy of the input changes (or a method that takes the
   graphics mode change after input handling) would be easier.
 - There is no random generator in the engine; Lantern carries its own xorshift.
+  **Done:** `vnce_game::Rng` (Lantern and `stars` use it).
 - Text inside the pixel world (score, titles) is not possible yet without a bitmap font;
   Lantern uses the status line and widgets instead.
+  **Done:** `vnce_raster::Font` (5×7, ASCII and Turkish letters); Lantern draws a pixel
+  title and a heads-up display.
 - The best score is kept only while the game runs (no save file yet).
+  **Done:** `vnce_game::SaveFile`; Lantern saves the best score, settings and controls.
 - Key rebinding is not in the settings screen yet (volumes, frame rate and display method
   are); planned with the save file helper so bindings can be stored.
+  **Done:** Settings → Controls (Esc cancels, so it cannot be bound there).
 - Cosmetic: the floor tile pattern repeats visibly as a grid.
+  **Done:** four floor variants placed by position.
 
 ## Resume here (next session)
 
@@ -61,3 +67,10 @@ Order agreed with the user:
 Earlier findings that still stand: Sixel scrolling in Windows Terminal is limited by the
 terminal itself (accepted by the user, see the Phase 10 notes); a native window backend
 was discussed and declined.
+
+## Progress (second session, 2026-11-25)
+
+Step 1 of the agreed order is done, one commit per piece: `Rng`, `Font`, key and binding
+names (`KeyCode` / `Binding` implement `Display` and `FromStr`), `SaveFile` with
+`data_dir`, Lantern saving, the controls screen and the floor variants. Still open from
+the notes: the `Context::input()` borrow. Next: step 2, the tutorial.

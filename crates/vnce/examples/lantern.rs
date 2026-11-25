@@ -286,13 +286,15 @@ impl Cave {
         (index % self.width, index / self.width)
     }
 
-    /// The cave as a tile map: 0 rock, 1 floor, 2 rock edge (rock next to floor).
+    /// The cave as a tile map: 0 rock, 1 floor, 2 rock edge (rock next to floor), and
+    /// 3 to 5 more floor variants, picked by position so the floor does not look like a grid.
     fn tile_map(&self) -> TileMap {
         let mut text = String::new();
         for y in 0..self.height as i32 {
             for x in 0..self.width as i32 {
                 let c = if !self.wall(x, y) {
-                    '.'
+                    let mut pick = Rng::new((u64::from(x as u32) << 32) | u64::from(y as u32));
+                    ['.', 'a', 'b', 'c'][pick.below(4) as usize]
                 } else if [(0, 1), (0, -1), (1, 0), (-1, 0)]
                     .iter()
                     .any(|(dx, dy)| !self.wall(x + dx, y + dy))
@@ -308,6 +310,9 @@ impl Cave {
         TileMap::from_text(&text, TILE, |c| match c {
             '#' => Some(0),
             '.' => Some(1),
+            'a' => Some(3),
+            'b' => Some(4),
+            'c' => Some(5),
             _ => Some(2),
         })
     }
@@ -317,23 +322,38 @@ impl Cave {
 // Art (original, drawn in code)
 // ---------------------------------------------------------------------------------------
 
+/// Tiles: 0 rock, 1 floor, 2 rock edge, 3 to 5 more floor (see `Cave::tile_map`). Specks
+/// come from a fixed random sequence per tile, so every floor variant looks different.
 fn tileset() -> Tileset {
+    let rock = Rgba::rgb(28, 24, 34);
+    let floor = Rgba::rgb(84, 74, 66);
+    let dark = Rgba::rgb(70, 62, 58);
+    let light = Rgba::rgb(98, 88, 78);
     let mut tiles = Vec::new();
-    for kind in 0..3_u32 {
+    for kind in 0..6_u32 {
+        let mut rng = Rng::new(u64::from(kind) + 1);
         let mut tile = Canvas::new(TILE, TILE);
         for y in 0..TILE {
             for x in 0..TILE {
-                let speck = (x * 5 + y * 3 + x * y + kind) % 7 == 0;
                 let color = match kind {
-                    0 => Rgba::rgb(28, 24, 34),
-                    1 if speck => Rgba::rgb(70, 62, 58),
-                    1 => Rgba::rgb(84, 74, 66),
-                    _ if y < 2 => Rgba::rgb(120, 104, 92),
-                    _ if speck => Rgba::rgb(52, 44, 52),
-                    _ => Rgba::rgb(64, 54, 62),
+                    0 => rock,
+                    2 if y < 2 => Rgba::rgb(120, 104, 92),
+                    2 if rng.chance(0.15) => Rgba::rgb(52, 44, 52),
+                    2 => Rgba::rgb(64, 54, 62),
+                    _ if rng.chance(0.12) => dark,
+                    _ if rng.chance(0.04) => light,
+                    _ => floor,
                 };
                 tile.pixel(x as i32, y as i32, color);
             }
+        }
+        // A pebble on one floor variant and a crack on another.
+        let (x, y) = (rng.range(1..6), rng.range(1..6));
+        if kind == 4 {
+            tile.fill_rect(x, y, 2, 1, light);
+            tile.fill_rect(x, y + 1, 2, 1, dark);
+        } else if kind == 5 {
+            tile.line(x, y, x + 2, y + 1, dark);
         }
         tiles.push(tile);
     }
