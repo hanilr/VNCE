@@ -53,4 +53,8 @@ mod tutorial {
     mod pixel_graphics {}
     #[doc = include_str!("../../../docs/tutorial/04-sprites-and-animation.md")]
     mod sprites_and_animation {}
+    #[doc = include_str!("../../../docs/tutorial/05-tilemaps-camera-collision.md")]
+    mod tilemaps_camera_collision {}
+    #[doc = include_str!("../../../docs/tutorial/06-scenes-and-ui.md")]
+    mod scenes_and_ui {}
 }
