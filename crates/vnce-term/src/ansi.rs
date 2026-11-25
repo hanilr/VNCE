@@ -16,7 +16,14 @@ const CSI: &str = "\x1b[";
 ///
 /// Returns any error from the writer.
 pub fn move_to<W: Write>(out: &mut W, x: u16, y: u16) -> io::Result<()> {
-    write!(out, "{CSI}{};{}H", u32::from(y) + 1, u32::from(x) + 1)
+    // Written by hand instead of with `write!`: this runs for most changed cells.
+    let mut sequence = Sequence::new();
+    sequence.push_bytes(CSI.as_bytes());
+    sequence.push_number(u32::from(y) + 1);
+    sequence.push_bytes(b";");
+    sequence.push_number(u32::from(x) + 1);
+    sequence.push_bytes(b"H");
+    out.write_all(sequence.as_bytes())
 }
 
 /// Clears the whole screen. Cleared cells get the *current* background color, so reset
@@ -100,7 +107,14 @@ pub fn end_synchronized_update<W: Write>(out: &mut W) -> io::Result<()> {
 ///
 /// Returns any error from the writer.
 pub fn write_symbol<W: Write>(out: &mut W, symbol: &str) -> io::Result<bool> {
-    if symbol.chars().any(char::is_control) {
+    // ASCII symbols (the common case) are checked byte by byte; the ASCII control
+    // characters are exactly the ASCII characters `char::is_control` matches.
+    let control = if symbol.is_ascii() {
+        symbol.bytes().any(|byte| byte.is_ascii_control())
+    } else {
+        symbol.chars().any(char::is_control)
+    };
+    if control {
         out.write_all(b" ")?;
         return Ok(false);
     }
@@ -147,6 +161,9 @@ impl StyleState {
     ) -> io::Result<()> {
         let fg = fg.downsample(depth);
         let bg = bg.downsample(depth);
+        if (fg, bg, modifiers) == (self.fg, self.bg, self.modifiers) {
+            return Ok(());
+        }
         let mut sgr = SgrWriter::new(out);
 
         let mut removed = self.modifiers.difference(modifiers);
@@ -159,14 +176,18 @@ impl StyleState {
             removed.remove(intensity);
             added.insert(modifiers.intersection(intensity));
         }
-        for (modifier, code) in REMOVE_CODES {
-            if removed.contains(modifier) {
-                sgr.param(code)?;
+        if !removed.is_empty() {
+            for (modifier, code) in REMOVE_CODES {
+                if removed.contains(modifier) {
+                    sgr.param(code)?;
+                }
             }
         }
-        for (modifier, code) in ADD_CODES {
-            if added.contains(modifier) {
-                sgr.param(code)?;
+        if !added.is_empty() {
+            for (modifier, code) in ADD_CODES {
+                if added.contains(modifier) {
+                    sgr.param(code)?;
+                }
             }
         }
         if fg != self.fg {
@@ -238,35 +259,126 @@ fn write_color<W: Write>(sgr: &mut SgrWriter<'_, W>, color: Color, layer: Layer)
 }
 
 /// Writes the parameters of one SGR sequence (`CSI p1;p2;... m`), separated by `;`.
+///
+/// The sequence is assembled on the stack and written with a single `write_all` in
+/// [`SgrWriter::finish`].
 struct SgrWriter<'a, W: Write> {
     out: &'a mut W,
-    started: bool,
+    sequence: Sequence,
 }
 
 impl<'a, W: Write> SgrWriter<'a, W> {
     fn new(out: &'a mut W) -> Self {
         Self {
             out,
-            started: false,
+            sequence: Sequence::new(),
         }
     }
 
+    // Kept fallible like the writer it used to write to directly, so the callers stay the
+    // same.
+    #[allow(clippy::unnecessary_wraps, reason = "keeps the callers unchanged")]
     fn param(&mut self, value: u8) -> io::Result<()> {
-        if self.started {
-            write!(self.out, ";{value}")
+        if self.sequence.is_empty() {
+            self.sequence.push_bytes(CSI.as_bytes());
         } else {
-            self.started = true;
-            write!(self.out, "{CSI}{value}")
+            self.sequence.push_bytes(b";");
         }
+        self.sequence.push_number(u32::from(value));
+        Ok(())
     }
 
-    fn finish(self) -> io::Result<()> {
-        if self.started {
-            self.out.write_all(b"m")?;
+    fn finish(mut self) -> io::Result<()> {
+        if !self.sequence.is_empty() {
+            self.sequence.push_bytes(b"m");
+            self.out.write_all(self.sequence.as_bytes())?;
         }
         Ok(())
     }
 }
+
+/// A short escape sequence assembled on the stack, so it can be written without the
+/// formatting machinery and with a single `write_all`.
+struct Sequence {
+    bytes: [u8; Self::CAPACITY],
+    len: usize,
+}
+
+impl Sequence {
+    /// Enough for the longest SGR sequence `StyleState::apply` writes (about 100 bytes:
+    /// every modifier code and two RGB colors).
+    const CAPACITY: usize = 128;
+
+    fn new() -> Self {
+        Self {
+            bytes: [0; Self::CAPACITY],
+            len: 0,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+
+    /// Appends `bytes`; bytes that do not fit are dropped (never reached by the sequences
+    /// of this module).
+    fn push_bytes(&mut self, bytes: &[u8]) {
+        let end = self.len + bytes.len();
+        if let Some(target) = self.bytes.get_mut(self.len..end) {
+            target.copy_from_slice(bytes);
+            self.len = end;
+        }
+    }
+
+    /// Appends `value` in decimal.
+    fn push_number(&mut self, mut value: u32) {
+        // Color channels and SGR codes (the vast majority) come from a table.
+        if let Some((digits, len)) = usize::try_from(value).ok().and_then(|v| DECIMAL.get(v)) {
+            self.push_bytes(&digits[..usize::from(*len)]);
+            return;
+        }
+        let mut digits = [0u8; 10];
+        let mut start = digits.len();
+        loop {
+            start -= 1;
+            // `value % 10` is a single digit.
+            digits[start] = b'0' + u8::try_from(value % 10).unwrap_or(0);
+            value /= 10;
+            if value == 0 {
+                break;
+            }
+        }
+        self.push_bytes(&digits[start..]);
+    }
+}
+
+/// The decimal digits of 0..=255 and their count.
+const DECIMAL: [([u8; 3], u8); 256] = {
+    let mut table = [([0u8; 3], 0u8); 256];
+    let mut value = 0;
+    while value < 256 {
+        // `value < 256`, so every digit fits in a `u8`.
+        #[allow(clippy::cast_possible_truncation, reason = "value < 256")]
+        let (hundreds, tens, ones) = (
+            (value / 100) as u8,
+            (value / 10 % 10) as u8,
+            (value % 10) as u8,
+        );
+        table[value] = if value >= 100 {
+            ([b'0' + hundreds, b'0' + tens, b'0' + ones], 3)
+        } else if value >= 10 {
+            ([b'0' + tens, b'0' + ones, 0], 2)
+        } else {
+            ([b'0' + ones, 0, 0], 1)
+        };
+        value += 1;
+    }
+    table
+};
 
 #[cfg(test)]
 mod tests {
@@ -298,11 +410,52 @@ mod tests {
     }
 
     #[test]
+    fn numbers_are_written_in_decimal() {
+        for value in [0, 7, 10, 99, 100, 255, 65_536, u32::MAX] {
+            let mut sequence = Sequence::new();
+            sequence.push_number(value);
+            assert_eq!(sequence.as_bytes(), value.to_string().as_bytes());
+        }
+    }
+
+    #[test]
+    fn longest_sgr_sequence_fits() {
+        // Every modifier switched off then on, with two RGB colors of three-digit values.
+        let mut state = StyleState {
+            fg: Color::Reset,
+            bg: Color::Reset,
+            modifiers: Modifiers::ALL,
+        };
+        let out = sgr(
+            &mut state,
+            Color::Rgb(255, 255, 255),
+            Color::Rgb(255, 255, 255),
+            Modifiers::BOLD | Modifiers::DIM,
+        );
+        assert!(out.len() < Sequence::CAPACITY, "{}", out.len());
+        assert!(out.ends_with("48;2;255;255;255m"), "{out:?}");
+        let mut state = StyleState::RESET;
+        let out = sgr(
+            &mut state,
+            Color::Rgb(255, 255, 255),
+            Color::Rgb(255, 255, 255),
+            Modifiers::ALL,
+        );
+        assert_eq!(
+            out,
+            "\x1b[1;2;3;4;5;7;8;9;38;2;255;255;255;48;2;255;255;255m"
+        );
+    }
+
+    #[test]
     fn symbols_never_contain_control_characters() {
         let mut out = Vec::new();
         assert!(write_symbol(&mut out, "界").unwrap());
         assert!(!write_symbol(&mut out, "\x1b").unwrap());
-        assert_eq!(String::from_utf8(out).unwrap(), "界 ");
+        assert!(!write_symbol(&mut out, "\x7f").unwrap());
+        assert!(!write_symbol(&mut out, "\u{9b}").unwrap());
+        assert!(write_symbol(&mut out, "a").unwrap());
+        assert_eq!(String::from_utf8(out).unwrap(), "界   a");
     }
 
     #[test]
