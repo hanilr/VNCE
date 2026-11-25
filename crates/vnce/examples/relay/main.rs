@@ -10,7 +10,7 @@
 //! - Sound Lab: synthesized notes, music and panning (`vnce_audio`), and a waveform.
 //! - Archive: layouts, wrapped Unicode text, lists, gauges, borders, the FPS overlay.
 //!
-//! Drones patrol the wings (collision through a `SpatialGrid`); the best time, the
+//! Drones guard the reactor (collision through a `SpatialGrid`); the best time, the
 //! settings and the controls are kept in a save file.
 //!
 //! Run with:

@@ -319,7 +319,7 @@ fn topic(index: usize) -> Text<'static> {
             push(Line::from(vec![
                 Span::raw("Bring all five cores to the "),
                 Span::styled("relay", Style::new().fg(Color::rgb(120, 255, 170)).bold()),
-                Span::raw(" in the atrium. Drones patrol the wings but never enter the atrium."),
+                Span::raw(" in the atrium. Drones guard the reactor and never leave it."),
             ]));
         }
         1 => {

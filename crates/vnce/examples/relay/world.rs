@@ -57,7 +57,7 @@ impl Room {
         match self {
             Self::Atrium => "BRING 5 CORES TO THE RELAY",
             Self::Observatory => "GPU SHADER OR CPU NEBULA",
-            Self::Reactor => "3D MESH ON THE GPU OR CPU",
+            Self::Reactor => "3D MESH - MIND THE DRONES",
             Self::Prism => "EVERY PIXEL MODE - PRESS E",
             Self::SoundLab => "REPEAT THE PADS - SYNTH",
             Self::Archive => "WIDGETS AND TEXT - PRESS E",
@@ -196,7 +196,7 @@ pub struct Station {
     pub lamps: Vec<Lamp>,
     /// Where each wing's core appears.
     pub cores: Vec<(Room, (f32, f32))>,
-    /// Where the drones start.
+    /// Where the drones start (all in the reactor, which they never leave).
     pub drones: Vec<(f32, f32)>,
 }
 
@@ -322,17 +322,11 @@ impl Station {
                 (Room::SoundLab, tile_center(32, 36)),
                 (Room::Archive, tile_center(9, 22)),
             ],
+            // Only the reactor is guarded; the other wings are safe.
             drones: vec![
-                tile_center(26, 8),
-                tile_center(36, 6),
                 tile_center(50, 17),
                 tile_center(58, 26),
                 tile_center(51, 27),
-                tile_center(12, 8),
-                tile_center(4, 22),
-                tile_center(13, 26),
-                tile_center(22, 40),
-                tile_center(41, 36),
             ],
         }
     }
@@ -397,6 +391,11 @@ mod tests {
         }
         for &at in &station.drones {
             assert!(reachable(at), "drone at {at:?}");
+            assert_eq!(
+                station.room_at(at.0, at.1),
+                Room::Reactor,
+                "drone at {at:?}"
+            );
         }
         for pad in &station.pads {
             assert!(reachable(pad.center()));

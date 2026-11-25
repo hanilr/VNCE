@@ -37,6 +37,8 @@ struct Player {
 }
 
 struct Drone {
+    /// The room the drone guards and never leaves.
+    home: Room,
     body: Aabb,
     previous: (f32, f32),
     heading: (f32, f32),
@@ -153,6 +155,7 @@ impl Play {
             .map(|&(x, y)| {
                 let body = Aabb::from_center(x, y, 6.0, 5.0);
                 Drone {
+                    home: station.room_at(x, y),
                     previous: (body.x, body.y),
                     body,
                     heading: (0.0, 0.0),
@@ -167,7 +170,8 @@ impl Play {
             .map(|&(room, (x, y))| Core {
                 room,
                 body: Aabb::from_center(x, y, 5.0, 5.0),
-                // The observatory and reactor cores lie in the open (guarded by drones).
+                // The observatory and reactor cores lie in the open (the reactor's is guarded by
+                // drones).
                 visible: matches!(room, Room::Observatory | Room::Reactor),
                 taken: false,
             })
@@ -320,15 +324,15 @@ impl Play {
             );
             let (nx, ny) = movement.aabb.center();
             let drone = &mut self.drones[index];
-            // The atrium is safe: drones turn back at its doors.
-            if station.room_at(nx, ny) == Room::Atrium {
-                drone.heading = (-hx, -hy);
-                drone.turn = Timer::once(Duration::from_millis(800));
-            } else {
+            // Drones stay in the room they start in (the reactor): they turn back at its doors.
+            if station.room_at(nx, ny) == drone.home {
                 drone.body = movement.aabb;
                 if movement.hit.any() {
                     drone.heading = (-drone.heading.0, -drone.heading.1);
                 }
+            } else {
+                drone.heading = (-hx, -hy);
+                drone.turn = Timer::once(Duration::from_millis(800));
             }
         }
     }
