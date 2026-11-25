@@ -103,3 +103,5 @@ State on 2026-11-25: Phases 15 and 16 are done and committed locally (not pushed
 asked not to push yet). Start this phase at step 2 (the engine change), following the
 workflow in `AGENTS.md`: the plan is approved, so carry out each step with checks
 (`--all-features` and `--no-default-features`), focused commits, and present the result.
+After this phase comes Phase 18, the native window backend
+(`2026-11-25-phase-18-window-backend.md`).
