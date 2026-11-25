@@ -55,7 +55,9 @@ public. Nothing is published on crates.io in this phase.
 
 - After the phase, at the user's request, `docs/RELEASING.md` became a local file: it is
   in `.gitignore` and no longer tracked, and the README, ARCHITECTURE and CHANGELOG no
-  longer point to it. Earlier commits still contain it.
+  longer point to it. The file was then removed from the whole history as well (and the
+  three commit messages that described it were adjusted), before the repository is made
+  public.
 
 ## Resume here (next session)
 
