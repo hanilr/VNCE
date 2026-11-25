@@ -26,7 +26,7 @@ pub mod image;
 pub mod mode;
 pub mod protocol;
 
-pub use canvas::{BlitOptions, Canvas, PixelRect};
+pub use canvas::{BlitOptions, Canvas, ParseScaleQualityError, PixelRect, ScaleQuality};
 pub use color::{BlendMode, Rgba};
 pub use font::Font;
 #[cfg(feature = "png")]

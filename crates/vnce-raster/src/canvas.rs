@@ -1,5 +1,8 @@
 //! The pixel canvas.
 
+use std::fmt;
+use std::str::FromStr;
+
 use crate::color::{BlendMode, Rgba, blend_span, to_u8};
 
 /// A rectangle in pixel coordinates. `x` and `y` may be negative.
@@ -323,17 +326,34 @@ impl Canvas {
     /// A copy scaled to `width × height`: bilinear when enlarging, area averaging when
     /// shrinking (so small details are averaged instead of skipped). Transparency is
     /// handled with premultiplied alpha, so transparent pixels do not darken edges.
+    ///
+    /// Uses [`ScaleQuality::Fast`]; see [`Canvas::scaled_with`].
     #[must_use]
     pub fn scaled(&self, width: u32, height: u32) -> Self {
+        self.scaled_with(width, height, ScaleQuality::Fast)
+    }
+
+    /// Like [`Canvas::scaled`], with a choice between speed and the exact reference
+    /// result.
+    #[must_use]
+    pub fn scaled_with(&self, width: u32, height: u32, quality: ScaleQuality) -> Self {
         if (width, height) == (self.width, self.height) {
             let mut copy = self.clone();
             copy.clip = None;
             return copy;
         }
-        let mut out = Self::new(width, height);
         if self.width == 0 || self.height == 0 || width == 0 || height == 0 {
-            return out;
+            return Self::new(width, height);
         }
+        match quality {
+            ScaleQuality::Fast => self.scaled_fast(width, height),
+            ScaleQuality::Exact => self.scaled_exact(width, height),
+        }
+    }
+
+    /// [`ScaleQuality::Exact`]: every destination pixel sums all its source pixels at once.
+    fn scaled_exact(&self, width: u32, height: u32) -> Self {
+        let mut out = Self::new(width, height);
         let x_axis = Axis::new(self.width, width);
         let y_axis = Axis::new(self.height, height);
         // The source columns of each destination column are the same on every row: computed
@@ -371,6 +391,93 @@ impl Canvas {
                 out.pixels[offset(width, x, y)] = pixel;
             }
         }
+        out
+    }
+
+    /// [`ScaleQuality::Fast`]: the same weights applied in two passes (horizontal, then
+    /// vertical) to a premultiplied copy of the source, with rows spread over threads.
+    /// Falls back to [`Canvas::scaled_exact`] when that needs fewer operations.
+    fn scaled_fast(&self, width: u32, height: u32) -> Self {
+        let x_axis = Axis::new(self.width, width);
+        let y_axis = Axis::new(self.height, height);
+        let columns: Vec<Vec<(u32, f32)>> = (0..width).map(|x| x_axis.taps(x)).collect();
+        let rows: Vec<Vec<(u32, f32)>> = (0..height).map(|y| y_axis.taps(y)).collect();
+        let threads = scale_threads(width, height);
+
+        // Two passes pay off when enlarging; when shrinking to a small image, summing every
+        // destination pixel directly can be cheaper. Compare the number of weighted sums.
+        let column_taps: usize = columns.iter().map(Vec::len).sum();
+        let row_taps: usize = rows.iter().map(Vec::len).sum();
+        let direct = column_taps.saturating_mul(row_taps);
+        let source_pixels = self.pixels.len();
+        let two_pass = source_pixels
+            .saturating_add(to_usize(self.height).saturating_mul(column_taps))
+            .saturating_add(to_usize(width).saturating_mul(row_taps))
+            / threads;
+        if direct <= two_pass {
+            return self.scaled_exact(width, height);
+        }
+        let column_totals: Vec<f32> = columns.iter().map(|taps| total(taps)).collect();
+
+        // Premultiplied source: color * alpha, and alpha, all in 0..=1 for alpha.
+        let premultiplied: Vec<[f32; 4]> = self
+            .pixels
+            .iter()
+            .map(|p| {
+                let alpha = f32::from(p.a) / 255.0;
+                [
+                    f32::from(p.r) * alpha,
+                    f32::from(p.g) * alpha,
+                    f32::from(p.b) * alpha,
+                    alpha,
+                ]
+            })
+            .collect();
+        let source_width = to_usize(self.width);
+        let target_width = to_usize(width);
+
+        // Horizontal pass: every source row at the target width.
+        let mut horizontal = vec![[0.0f32; 4]; to_usize(self.height) * target_width];
+        for_rows(&mut horizontal, target_width, threads, |sy, row| {
+            let source = &premultiplied[sy * source_width..(sy + 1) * source_width];
+            for (sum, taps) in row.iter_mut().zip(&columns) {
+                for &(sx, weight) in taps {
+                    let p = source[to_usize(sx)];
+                    for channel in 0..4 {
+                        sum[channel] += p[channel] * weight;
+                    }
+                }
+            }
+        });
+
+        // Vertical pass, then back from premultiplied colors.
+        let mut out = Self::new(width, height);
+        for_rows(&mut out.pixels, target_width, threads, |y, row| {
+            let taps = &rows[y];
+            let row_total = total(taps);
+            for (x, pixel) in row.iter_mut().enumerate() {
+                let mut sum = [0.0f32; 4];
+                for &(sy, weight) in taps {
+                    let p = horizontal[to_usize(sy) * target_width + x];
+                    for channel in 0..4 {
+                        sum[channel] += p[channel] * weight;
+                    }
+                }
+                let total = column_totals[x] * row_total;
+                let alpha = if total > 0.0 { sum[3] / total } else { 0.0 };
+                *pixel = if alpha <= 0.0 {
+                    Rgba::TRANSPARENT
+                } else {
+                    let channel = |value: f32| to_u8(value / (alpha * total));
+                    Rgba::new(
+                        channel(sum[0]),
+                        channel(sum[1]),
+                        channel(sum[2]),
+                        to_u8(alpha * 255.0),
+                    )
+                };
+            }
+        });
         out
     }
 
@@ -454,6 +561,123 @@ fn pixel_count(width: u32, height: u32) -> usize {
 /// Index of pixel `(x, y)` in a canvas of the given width.
 fn offset(width: u32, x: u32, y: u32) -> usize {
     usize::try_from(u64::from(y) * u64::from(width) + u64::from(x)).unwrap_or(usize::MAX)
+}
+
+/// How [`Canvas::scaled_with`] trades speed for exactness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ScaleQuality {
+    /// Two passes (horizontal, then vertical) on several threads for large images. A
+    /// channel can differ by one from [`ScaleQuality::Exact`], because sums are added in a
+    /// different order. Small results that are cheaper to compute directly use the exact
+    /// method.
+    #[default]
+    Fast,
+    /// Every destination pixel sums all its source pixels at once, on one thread: the
+    /// reference result, several times slower on large images.
+    Exact,
+}
+
+impl ScaleQuality {
+    /// Both qualities.
+    pub const ALL: [Self; 2] = [Self::Fast, Self::Exact];
+
+    /// The name used by `FromStr` and `Display` (`fast`, `exact`).
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Exact => "exact",
+        }
+    }
+}
+
+impl fmt::Display for ScaleQuality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl FromStr for ScaleQuality {
+    type Err = ParseScaleQualityError;
+
+    /// Parses `fast` or `exact` (case-insensitive).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let name = s.trim().to_ascii_lowercase();
+        Self::ALL
+            .into_iter()
+            .find(|quality| quality.name() == name)
+            .ok_or_else(|| ParseScaleQualityError(s.to_owned()))
+    }
+}
+
+/// Error returned when a string is not a scale quality name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseScaleQualityError(String);
+
+impl fmt::Display for ParseScaleQualityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "unknown scale quality `{}` (expected `fast` or `exact`)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for ParseScaleQualityError {}
+
+/// Images with fewer destination pixels are scaled on one thread (starting threads costs
+/// more than it saves).
+const PARALLEL_PIXELS: u64 = 200_000;
+
+/// Number of threads for scaling to `width × height`.
+fn scale_threads(width: u32, height: u32) -> usize {
+    if u64::from(width) * u64::from(height) < PARALLEL_PIXELS {
+        1
+    } else {
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+    }
+}
+
+/// Calls `f(row_index, row)` for every row of `rows` (rows of `row_length` items), on up to
+/// `threads` threads, each with a contiguous band of rows.
+fn for_rows<T: Send>(
+    rows: &mut [T],
+    row_length: usize,
+    threads: usize,
+    f: impl Fn(usize, &mut [T]) + Sync,
+) {
+    if row_length == 0 {
+        return;
+    }
+    let row_count = rows.len() / row_length;
+    if threads <= 1 || row_count < 2 {
+        for (index, row) in rows.chunks_mut(row_length).enumerate() {
+            f(index, row);
+        }
+        return;
+    }
+    let rows_per_band = row_count.div_ceil(threads);
+    std::thread::scope(|scope| {
+        for (band, chunk) in rows.chunks_mut(rows_per_band * row_length).enumerate() {
+            let f = &f;
+            scope.spawn(move || {
+                for (index, row) in chunk.chunks_mut(row_length).enumerate() {
+                    f(band * rows_per_band + index, row);
+                }
+            });
+        }
+    });
+}
+
+/// Sum of the weights of `taps`.
+fn total(taps: &[(u32, f32)]) -> f32 {
+    taps.iter().map(|&(_, weight)| weight).sum()
+}
+
+/// `u32` to `usize` (lossless on every supported platform).
+fn to_usize(value: u32) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
 }
 
 /// Maps destination pixels to weighted source pixels along one axis.
@@ -601,6 +825,57 @@ mod tests {
         let mut canvas = Canvas::filled(2, 2, R);
         canvas.resize(3, 1);
         assert_eq!(canvas.pixels(), &[Rgba::TRANSPARENT; 3]);
+    }
+
+    #[test]
+    fn fast_scaling_is_within_one_of_exact() {
+        let mut state = 0x5ca1_ab1e_u64;
+        let mut next = move |n: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            u32::try_from(state % n).unwrap_or(0)
+        };
+        // Small sizes, plus large targets that run on several threads.
+        let sizes = [(1, 1), (3, 7), (17, 5), (40, 30), (700, 400), (650, 333)];
+        for round in 0..60 {
+            let (width, height) = (next(60) + 1, next(60) + 1);
+            let mut canvas = Canvas::new(width, height);
+            for pixel in canvas.pixels_mut() {
+                let [r, g, b, a] = next(1 << 32).to_le_bytes();
+                // Some fully transparent and some opaque pixels.
+                let alpha = match a % 4 {
+                    0 => 0,
+                    1 => 255,
+                    _ => a,
+                };
+                *pixel = Rgba::new(r, g, b, alpha);
+            }
+            let (target_width, target_height) = sizes[round % sizes.len()];
+            let fast = canvas.scaled_with(target_width, target_height, ScaleQuality::Fast);
+            let exact = canvas.scaled_with(target_width, target_height, ScaleQuality::Exact);
+            for (f, e) in fast.pixels().iter().zip(exact.pixels()) {
+                let close = |a: u8, b: u8| a.abs_diff(b) <= 1;
+                // A pixel that is (almost) transparent may round to transparent in one and
+                // not the other; its color does not matter then.
+                if f.a <= 1 && e.a <= 1 {
+                    continue;
+                }
+                assert!(
+                    close(f.r, e.r) && close(f.g, e.g) && close(f.b, e.b) && close(f.a, e.a),
+                    "{f:?} {e:?} ({width}x{height} to {target_width}x{target_height})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scale_quality_names() {
+        for quality in ScaleQuality::ALL {
+            assert_eq!(quality.to_string().parse(), Ok(quality));
+        }
+        assert_eq!(" EXACT ".parse(), Ok(ScaleQuality::Exact));
+        assert!("slow".parse::<ScaleQuality>().is_err());
     }
 
     #[test]

@@ -27,7 +27,9 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use vnce::vnce_core::{Color, ColorDepth, Rect, Size, Style};
-use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, PixelMode, RenderOptions, Rgba};
+use vnce::vnce_raster::{
+    BlendMode, BlitOptions, Canvas, PixelMode, RenderOptions, Rgba, ScaleQuality,
+};
 use vnce::vnce_term::{Backend, Capabilities, Terminal, TerminalOptions};
 
 /// Terminal size of the terminal scenarios, in cells.
@@ -320,13 +322,15 @@ fn scaling_scenarios(frames: u32) {
     let mut source = Canvas::new(400, 240);
     gradient(&mut source, 0);
     for (name, width, height) in [
-        ("scaled 400×240 → 1600×880 (enlarge)", 1600, 880),
-        ("scaled 400×240 → 160×96 (shrink)", 160, 96),
+        ("400×240 → 1600×880 (enlarge)", 1600, 880),
+        ("400×240 → 160×96 (shrink)", 160, 96),
     ] {
-        let start = Instant::now();
-        for _ in 0..frames {
-            black_box(source.scaled(width, height));
+        for quality in ScaleQuality::ALL {
+            let start = Instant::now();
+            for _ in 0..frames {
+                black_box(source.scaled_with(width, height, quality));
+            }
+            report(&format!("{quality}: {name}"), frames, start.elapsed(), None);
         }
-        report(name, frames, start.elapsed(), None);
     }
 }

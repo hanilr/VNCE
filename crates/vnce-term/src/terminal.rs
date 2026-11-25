@@ -4,7 +4,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use vnce_core::{Buffer, Color, Rect, Size, Style};
-use vnce_raster::{Canvas, PixelMode, RenderOptions, protocol};
+use vnce_raster::{Canvas, PixelMode, RenderOptions, ScaleQuality, protocol};
 
 use crate::ansi::{self, StyleState};
 use crate::backend::{Backend, CrosstermBackend};
@@ -137,6 +137,7 @@ pub struct Frame<'a> {
     cell_pixels: (u16, u16),
     images: &'a mut Vec<ImageRequest>,
     placed: &'a [PlacedImage],
+    scale_quality: ScaleQuality,
 }
 
 impl Frame<'_> {
@@ -154,9 +155,10 @@ impl Frame<'_> {
                     return;
                 }
                 let (columns, rows) = mode.cell_size();
-                let scaled = canvas.scaled(
+                let scaled = canvas.scaled_with(
                     u32::from(area.width) * columns,
                     u32::from(area.height) * rows,
+                    self.scale_quality,
                 );
                 scaled.render(self.buffer, area, mode, &RenderOptions::default());
             }
@@ -342,6 +344,8 @@ struct ImageState {
     defer: bool,
     /// Keeps the Sixel palette from frame to frame (faster, no color flicker).
     sixel: protocol::sixel::Encoder,
+    /// How images are scaled to the pixels or cells of their area.
+    scale_quality: ScaleQuality,
 }
 
 impl Terminal<CrosstermBackend> {
@@ -401,6 +405,7 @@ impl<B: Backend> Terminal<B> {
                 placeholders: false,
                 defer: false,
                 sixel: protocol::sixel::Encoder::new(),
+                scale_quality: ScaleQuality::default(),
             },
         })
     }
@@ -421,6 +426,9 @@ impl<B: Backend> Terminal<B> {
         self.graphics = GraphicsMode::detect(&self.info, &self.capabilities);
         self.tmux_passthrough = crate::tmux::inside();
         self.sixel_tall_pixels = sixel_tall_pixels(|name| std::env::var(name).ok());
+        if let Some(quality) = scale_quality(|name| std::env::var(name).ok()) {
+            self.set_scale_quality(quality);
+        }
         Ok(())
     }
 
@@ -454,6 +462,23 @@ impl<B: Backend> Terminal<B> {
     pub fn set_sixel_tall_pixels(&mut self, on: bool) {
         if on != self.sixel_tall_pixels {
             self.sixel_tall_pixels = on;
+            self.full_redraw = true;
+        }
+    }
+
+    /// How images are scaled to their area ([`Frame::draw_image`] in cells, and Sixel
+    /// images): [`ScaleQuality::Fast`] by default, or as set by `VNCE_SCALE_QUALITY`
+    /// (`fast` or `exact`) when entering.
+    #[must_use]
+    pub fn scale_quality(&self) -> ScaleQuality {
+        self.images.scale_quality
+    }
+
+    /// Changes how images are scaled (see [`Terminal::scale_quality`]). The next frame is
+    /// fully redrawn, so images on the screen are scaled again.
+    pub fn set_scale_quality(&mut self, quality: ScaleQuality) {
+        if quality != self.images.scale_quality {
+            self.images.scale_quality = quality;
             self.full_redraw = true;
         }
     }
@@ -548,6 +573,7 @@ impl<B: Backend> Terminal<B> {
             cell_pixels,
             images: &mut self.images.requests,
             placed: &self.images.placed,
+            scale_quality: self.images.scale_quality,
         };
         render(&mut frame);
         self.flush()?;
@@ -801,7 +827,13 @@ impl ImageState {
                 (Some(mut placed), Some(canvas)) => {
                     // Scaling is costly: the image as drawn is made once, for the comparison
                     // and for sending.
-                    let shown = sixel_shown(protocol, &canvas, request.area, cell_pixels);
+                    let shown = sixel_shown(
+                        protocol,
+                        &canvas,
+                        request.area,
+                        cell_pixels,
+                        self.scale_quality,
+                    );
                     let update = can_update
                         .then(|| {
                             changed_parts(protocol, &placed, &canvas, shown.as_ref(), cell_pixels)
@@ -850,7 +882,13 @@ impl ImageState {
                 (_, Some(canvas)) => {
                     let id = self.allocate_id();
                     let tiles = self.tiles_for(protocol, &canvas, request.area, cell_pixels);
-                    let shown = sixel_shown(protocol, &canvas, request.area, cell_pixels);
+                    let shown = sixel_shown(
+                        protocol,
+                        &canvas,
+                        request.area,
+                        cell_pixels,
+                        self.scale_quality,
+                    );
                     sends.push(ImageSend::Full(index));
                     self.placed.push(PlacedImage {
                         area: request.area,
@@ -957,6 +995,7 @@ impl ImageState {
                             sixel_options,
                             sixel,
                             self.placeholders,
+                            self.scale_quality,
                             out,
                         );
                     }
@@ -1025,6 +1064,11 @@ fn sixel_tall_pixels(env: impl Fn(&str) -> Option<String>) -> bool {
     }
 }
 
+/// The scale quality chosen with `VNCE_SCALE_QUALITY` (`fast` or `exact`), if any.
+fn scale_quality(env: impl Fn(&str) -> Option<String>) -> Option<ScaleQuality> {
+    env("VNCE_SCALE_QUALITY").and_then(|value| value.parse().ok())
+}
+
 /// Writing a frame that takes longer than this means the terminal is behind.
 const SLOW_WRITE: Duration = Duration::from_millis(25);
 
@@ -1053,11 +1097,13 @@ fn sixel_shown(
     canvas: &Canvas,
     area: Rect,
     cell_pixels: (u16, u16),
+    quality: ScaleQuality,
 ) -> Option<Canvas> {
     (protocol == GraphicsProtocol::Sixel).then(|| {
-        canvas.scaled(
+        canvas.scaled_with(
             u32::from(area.width) * u32::from(cell_pixels.0),
             u32::from(area.height) * u32::from(cell_pixels.1),
+            quality,
         )
     })
 }
@@ -1175,6 +1221,10 @@ fn patches(changed: &[bool], area: Rect) -> Option<Change> {
 }
 
 /// Encodes one image for `graphics` at the cursor position.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each protocol needs a different part of the terminal state"
+)]
 fn write_image(
     graphics: GraphicsProtocol,
     image: &PlacedImage,
@@ -1182,6 +1232,7 @@ fn write_image(
     sixel_options: protocol::sixel::SixelOptions,
     sixel: &mut protocol::sixel::Encoder,
     placeholders: bool,
+    scale_quality: ScaleQuality,
     out: &mut Vec<u8>,
 ) {
     let area = image.area;
@@ -1196,7 +1247,10 @@ fn write_image(
                 Some(shown) if (shown.width(), shown.height()) == (width, height) => {
                     sixel.encode(shown, options, out);
                 }
-                _ => sixel.encode(&image.canvas.scaled(width, height), options, out),
+                _ => {
+                    let scaled = image.canvas.scaled_with(width, height, scale_quality);
+                    sixel.encode(&scaled, options, out);
+                }
             }
         }
         GraphicsProtocol::Iterm2 => {
@@ -1893,6 +1947,43 @@ mod tests {
         }
 
         #[test]
+        fn scale_quality_is_used_for_cell_images_and_redraws() {
+            // A gradient scaled down to cells: both qualities stay within one per channel.
+            let mut canvas = Canvas::new(37, 23);
+            for (i, pixel) in canvas.pixels_mut().iter_mut().enumerate() {
+                let v = u8::try_from(i * 7 % 256).unwrap_or(0);
+                *pixel = Rgba::new(v, 255 - v, v / 2, 200);
+            }
+            let area = Rect::new(0, 0, 5, 3);
+            let mut cells = Vec::new();
+            for quality in ScaleQuality::ALL {
+                let mut terminal = with_mode(GraphicsMode::Cells(PixelMode::HalfBlock), 5, 3);
+                assert_eq!(terminal.scale_quality(), ScaleQuality::Fast);
+                terminal.set_scale_quality(quality);
+                assert_eq!(terminal.scale_quality(), quality);
+                terminal.draw(|f| f.draw_image(area, &canvas)).unwrap();
+                cells.push(terminal.backend().screen().clone());
+
+                // Changing the quality redraws the whole screen.
+                terminal.backend_mut().take_output();
+                let other = ScaleQuality::ALL.into_iter().find(|q| *q != quality);
+                terminal.set_scale_quality(other.unwrap_or(quality));
+                terminal.draw(|f| f.draw_image(area, &canvas)).unwrap();
+                let out = String::from_utf8(terminal.backend_mut().take_output()).unwrap();
+                assert!(out.contains("\x1b[2J"), "{out:?}");
+            }
+            let close = |a: Color, b: Color| match (a, b) {
+                (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+                    r1.abs_diff(r2) <= 1 && g1.abs_diff(g2) <= 1 && b1.abs_diff(b2) <= 1
+                }
+                (a, b) => a == b,
+            };
+            for (fast, exact) in cells[0].cells().iter().zip(cells[1].cells()) {
+                assert!(close(fast.fg, exact.fg) && close(fast.bg, exact.bg));
+            }
+        }
+
+        #[test]
         fn sixel_images_send_only_the_cells_that_changed() {
             let mut terminal = with_mode(SIXEL, 12, 6);
             let area = Rect::new(1, 1, 6, 3);
@@ -2038,6 +2129,12 @@ mod tests {
                 ("VNCE_SIXEL_ASPECT", "1")
             ])));
             assert!(sixel_tall_pixels(env(&[("VNCE_SIXEL_ASPECT", "2")])));
+            assert_eq!(
+                scale_quality(env(&[("VNCE_SCALE_QUALITY", "exact")])),
+                Some(ScaleQuality::Exact)
+            );
+            assert_eq!(scale_quality(env(&[("VNCE_SCALE_QUALITY", "slow")])), None);
+            assert_eq!(scale_quality(env(&[])), None);
             assert_eq!(frames_to_defer(Duration::from_millis(10)), 0);
             assert_eq!(frames_to_defer(Duration::from_millis(30)), 1);
             assert_eq!(frames_to_defer(Duration::from_millis(40)), 2);
