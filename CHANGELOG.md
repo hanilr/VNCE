@@ -133,6 +133,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   art and `Font::measure`; `lantern` draws its title and a heads-up display with it.
 - Text names for keys and bindings: `KeyCode` and `vnce_game::Binding` implement `Display`
   and `FromStr` (`w`, `Space`, `Esc`, `F5`, `mouse:left`, ...), so controls can be saved.
+- `vnce_game::SaveFile`: plain-text `key = value` save files in the user's data folder
+  (`data_dir`: `%APPDATA%`, `~/Library/Application Support`, `$XDG_DATA_HOME` or
+  `~/.local/share`) with typed values, key bindings and safe writes through a temporary
+  file; missing or broken files start empty.
 
 ### Changed
 
