@@ -49,11 +49,11 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use vnce::vnce_core::{Color, Rect, Style};
-use vnce::vnce_game::{ActionMap, SaveFile, SceneStack};
+use vnce::vnce_game::{ActionMap, Binding, SaveFile, SceneStack};
 use vnce::vnce_raster::{Canvas, Font, Rgba};
 use vnce::vnce_runtime::{Context, FpsLimit, RunConfig};
 use vnce::vnce_term::input::MouseButton;
-use vnce::vnce_term::{Frame, GraphicsMode, KeyCode};
+use vnce::vnce_term::{Frame, GamepadAxis, GamepadButton, GraphicsMode, KeyCode};
 use vnce::vnce_ui::{Alignment, Block, BorderType, Clear, Line, Padding, Paragraph, Widget};
 
 use crate::audio::Sounds;
@@ -111,6 +111,20 @@ pub(crate) fn default_controls() -> ActionMap<Action> {
         .bind(Action::Quit, 'q')
         .bind(Action::Method, 'g')
         .bind(Action::Perf, 'f')
+        // A gamepad: d-pad or left stick to move, South to use and confirm.
+        .bind(Action::Up, GamepadButton::DPadUp)
+        .bind(Action::Up, Binding::stick(GamepadAxis::LeftY, true))
+        .bind(Action::Down, GamepadButton::DPadDown)
+        .bind(Action::Down, Binding::stick(GamepadAxis::LeftY, false))
+        .bind(Action::Left, GamepadButton::DPadLeft)
+        .bind(Action::Left, Binding::stick(GamepadAxis::LeftX, false))
+        .bind(Action::Right, GamepadButton::DPadRight)
+        .bind(Action::Right, Binding::stick(GamepadAxis::LeftX, true))
+        .bind(Action::Pause, GamepadButton::Start)
+        .bind(Action::Confirm, GamepadButton::South)
+        .bind(Action::Back, GamepadButton::East)
+        .bind(Action::Use, GamepadButton::South)
+        .bind(Action::Use, GamepadButton::West)
 }
 
 /// Frame rate limits offered in the settings, in order.
@@ -179,11 +193,9 @@ impl Shared {
     pub(crate) fn new(save: SaveFile, gpu: bool, sound: bool) -> Self {
         let mut controls = default_controls();
         for (action, name) in ACTIONS {
+            // Saved keys replace the default keys, saved pad buttons the default buttons.
             if let Some(bindings) = save.bindings(&format!("keys.{name}")) {
-                controls.unbind(action);
-                for binding in bindings {
-                    controls.add(action, binding);
-                }
+                controls.replace_bindings(action, bindings);
             }
         }
         let mut visuals = Visuals::new(gpu);

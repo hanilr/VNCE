@@ -29,6 +29,7 @@ use winit::keyboard::ModifiersState;
 use winit::platform::pump_events::EventLoopExtPumpEvents;
 use winit::window::{Fullscreen, Icon, Window, WindowId};
 
+use crate::gamepad::Gamepads;
 use crate::keys;
 use crate::renderer::{Layout, Renderer};
 
@@ -119,6 +120,8 @@ struct State {
     /// [`WindowOptions::screenshot`]).
     presented: u64,
     screenshot: Option<(PathBuf, u64)>,
+    /// The gamepads (none without the `gamepad` feature).
+    pads: Gamepads,
 }
 
 impl State {
@@ -484,12 +487,22 @@ impl Driver for WindowDriver {
     }
 
     fn poll_event(&mut self, timeout: Duration) -> io::Result<Option<Event>> {
-        if let Some(event) = self.state.borrow_mut().events.pop_front() {
-            return Ok(Some(event));
+        {
+            let mut state = self.state.borrow_mut();
+            let state = &mut *state;
+            state.pads.poll(&mut state.events);
+            if let Some(event) = state.events.pop_front() {
+                return Ok(Some(event));
+            }
         }
         self.event_loop
             .pump_app_events(Some(timeout), &mut self.app);
-        Ok(self.state.borrow_mut().events.pop_front())
+        let mut state = self.state.borrow_mut();
+        let state = &mut *state;
+        // Gamepads are read after the wait too, so a button pressed during it arrives at
+        // once (a wait is at most one frame).
+        state.pads.poll(&mut state.events);
+        Ok(state.events.pop_front())
     }
 }
 
@@ -626,7 +639,9 @@ fn gpu_state(window: &Arc<Window>, options: &WindowOptions) -> Result<State, Str
         buttons: [false; 3],
         presented: 0,
         screenshot: options.screenshot.clone(),
+        pads: Gamepads::empty(),
     };
+    state.pads = Gamepads::new(&mut state.events);
     state.resize();
     Ok(state)
 }

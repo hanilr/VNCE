@@ -26,12 +26,14 @@ use std::time::Duration;
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{
-    Aabb, ActionMap, Animation, Animator, Camera, Playback, Scene, SceneStack, SpriteSheet,
-    TileMap, Tileset, Timer, Transition, ease, move_and_collide,
+    Aabb, ActionMap, Animation, Animator, Binding, Camera, Playback, Scene, SceneStack,
+    SpriteSheet, TileMap, Tileset, Timer, Transition, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Rgba};
 use vnce::vnce_runtime::{Context, RunConfig};
-use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
+use vnce::vnce_term::{
+    Event, Frame, GamepadAxis, GamepadButton, GraphicsMode, KeyCode, KeyEventKind,
+};
 use vnce::vnce_ui::{Alignment, Block, BorderType, Clear, Line, Paragraph, Widget};
 
 /// Size of a tile in world pixels.
@@ -245,7 +247,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bind(Action::Confirm, KeyCode::Enter)
         .bind(Action::Confirm, ' ')
         .bind(Action::Quit, 'q')
-        .bind(Action::Method, 'g');
+        .bind(Action::Method, 'g')
+        // A gamepad: d-pad or left stick to run, South to jump.
+        .bind(Action::Left, GamepadButton::DPadLeft)
+        .bind(Action::Left, Binding::stick(GamepadAxis::LeftX, false))
+        .bind(Action::Right, GamepadButton::DPadRight)
+        .bind(Action::Right, Binding::stick(GamepadAxis::LeftX, true))
+        .bind(Action::Jump, GamepadButton::South)
+        .bind(Action::Pause, GamepadButton::Start)
+        .bind(Action::Confirm, GamepadButton::South);
     let shared = Shared {
         controls,
         modes: Vec::new(),

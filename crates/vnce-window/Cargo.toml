@@ -24,6 +24,7 @@ workspace = true
 [dependencies]
 bytemuck.workspace = true
 fontdue.workspace = true
+gilrs = { workspace = true, optional = true }
 pollster.workspace = true
 vnce-core.workspace = true
 vnce-gpu.workspace = true
@@ -31,3 +32,9 @@ vnce-raster = { workspace = true, features = ["png"] }
 vnce-runtime.workspace = true
 vnce-term.workspace = true
 winit.workspace = true
+
+[features]
+default = ["gamepad"]
+# Gamepads with `gilrs`. On Linux it needs the udev development files (`libudev-dev` on
+# Debian / Ubuntu, `systemd-devel` on Fedora).
+gamepad = ["dep:gilrs"]

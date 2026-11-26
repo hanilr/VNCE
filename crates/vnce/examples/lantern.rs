@@ -35,7 +35,10 @@ use vnce::vnce_game::{
 };
 use vnce::vnce_raster::{BlitOptions, Canvas, Font, Rgba};
 use vnce::vnce_runtime::{Context, FpsLimit, RunConfig};
-use vnce::vnce_term::{Event, Frame, GraphicsMode, KeyCode, KeyEventKind};
+use vnce::vnce_term::{
+    Event, Frame, GamepadAxis, GamepadButton, GamepadEvent, GamepadEventKind, GraphicsMode,
+    KeyCode, KeyEventKind,
+};
 use vnce::vnce_ui::{
     Alignment, Block, BorderType, Clear, Line, List, ListState, Paragraph, StatefulWidget, Widget,
 };
@@ -135,6 +138,18 @@ fn default_controls() -> ActionMap<Action> {
         .bind(Action::Back, KeyCode::Esc)
         .bind(Action::Quit, 'q')
         .bind(Action::Method, 'g')
+        // A gamepad: d-pad or left stick to move.
+        .bind(Action::Up, GamepadButton::DPadUp)
+        .bind(Action::Up, Binding::stick(GamepadAxis::LeftY, true))
+        .bind(Action::Down, GamepadButton::DPadDown)
+        .bind(Action::Down, Binding::stick(GamepadAxis::LeftY, false))
+        .bind(Action::Left, GamepadButton::DPadLeft)
+        .bind(Action::Left, Binding::stick(GamepadAxis::LeftX, false))
+        .bind(Action::Right, GamepadButton::DPadRight)
+        .bind(Action::Right, Binding::stick(GamepadAxis::LeftX, true))
+        .bind(Action::Pause, GamepadButton::Start)
+        .bind(Action::Confirm, GamepadButton::South)
+        .bind(Action::Back, GamepadButton::East)
 }
 
 /// The save file key of the display method: a native window keeps its own, so a method
@@ -151,11 +166,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut controls = default_controls();
     let save = SaveFile::open("lantern");
     for (action, name) in ACTIONS {
+        // Saved keys replace the default keys, saved pad buttons the default buttons.
         if let Some(bindings) = save.bindings(&format!("keys.{name}")) {
-            controls.unbind(action);
-            for binding in bindings {
-                controls.add(action, binding);
-            }
+            controls.replace_bindings(action, bindings);
         }
     }
     let shared = Shared {
@@ -1007,9 +1020,11 @@ fn reset_binding(controls: &mut ActionMap<Action>, action: Action) {
 
 /// Whether a key of `action` is also used by another action. Esc is left out: pause and
 /// back share it on purpose.
+/// Gamepad buttons are left out too: menus and play share them on purpose.
 fn has_clash(controls: &ActionMap<Action>, action: Action) -> bool {
     controls.bindings(action).any(|binding| {
-        binding != Binding::Key(KeyCode::Esc)
+        !binding.is_gamepad()
+            && binding != Binding::Key(KeyCode::Esc)
             && ACTIONS.iter().any(|&(other, _)| {
                 other != action && controls.bindings(other).any(|b| b == binding)
             })
@@ -1023,24 +1038,29 @@ impl Scene<Shared> for Controls {
         _ctx: &mut Context,
         event: &Event,
     ) -> Transition<Shared> {
-        let Event::Key(key) = event else {
-            return Transition::None;
-        };
-        if !self.waiting || key.kind != KeyEventKind::Press {
+        if !self.waiting {
             return Transition::None;
         }
+        // A key, or a gamepad button, for the selected action. It replaces the action's
+        // bindings on that device only, so keys and pad buttons are chosen separately.
+        let binding = match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                // Esc cancels, so it cannot be chosen here.
+                KeyCode::Esc => None,
+                KeyCode::Char(c) => Some(Binding::Key(KeyCode::Char(c.to_ascii_lowercase()))),
+                other => Some(Binding::Key(other)),
+            },
+            Event::Gamepad(GamepadEvent {
+                kind: GamepadEventKind::ButtonPressed(button),
+                ..
+            }) => Some(Binding::Button(*button)),
+            _ => return Transition::None,
+        };
         self.waiting = false;
         self.settle = true;
-        // Esc cancels, so it cannot be chosen here.
-        if key.code == KeyCode::Esc {
-            return Transition::None;
-        }
-        let code = match key.code {
-            KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
-            other => other,
-        };
-        if let Some(&(action, _)) = self.menu.selected().and_then(|row| ACTIONS.get(row)) {
-            shared.controls.rebind(action, code);
+        let action = self.menu.selected().and_then(|row| ACTIONS.get(row));
+        if let (Some(binding), Some(&(action, _))) = (binding, action) {
+            shared.controls.rebind_device(action, binding);
             shared.sounds.play(Sfx::Blip);
         }
         Transition::None
@@ -1091,7 +1111,7 @@ impl Scene<Shared> for Controls {
             .enumerate()
             .map(|(row, &(action, name))| {
                 let keys = if self.waiting && self.menu.selected() == Some(row) {
-                    "press a key… (Esc: cancel)".to_owned()
+                    "key or pad button… (Esc: cancel)".to_owned()
                 } else {
                     binding_names(&shared.controls, action)
                 };

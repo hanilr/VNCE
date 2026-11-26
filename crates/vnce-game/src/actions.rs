@@ -210,6 +210,32 @@ impl<A: Copy + PartialEq> ActionMap<A> {
         self.add(action, binding);
     }
 
+    /// Replaces the bindings of `action` on the same device as `binding` (keyboard and
+    /// mouse, or gamepad) with `binding`, keeping those of the other device. A controls
+    /// screen that rebinds a key keeps the action's gamepad button, and the other way
+    /// round.
+    pub fn rebind_device(&mut self, action: A, binding: impl Into<Binding>) {
+        let binding = binding.into();
+        let pad = binding.is_gamepad();
+        self.bindings
+            .retain(|(a, b)| *a != action || b.is_gamepad() != pad);
+        self.add(action, binding);
+    }
+
+    /// Replaces the bindings of `action` with `bindings` for each device that `bindings`
+    /// has (keyboard and mouse, gamepad), keeping the others. For loading saved controls:
+    /// a save file from before gamepads were bound keeps the default gamepad bindings.
+    pub fn replace_bindings(&mut self, action: A, bindings: impl IntoIterator<Item = Binding>) {
+        let bindings: Vec<Binding> = bindings.into_iter().collect();
+        let keys = bindings.iter().any(|b| !b.is_gamepad());
+        let pads = bindings.iter().any(Binding::is_gamepad);
+        self.bindings
+            .retain(|(a, b)| *a != action || if b.is_gamepad() { !pads } else { !keys });
+        for binding in bindings {
+            self.add(action, binding);
+        }
+    }
+
     /// The bindings of `action`, in the order they were added.
     pub fn bindings(&self, action: A) -> impl Iterator<Item = Binding> + '_ {
         self.bindings
@@ -419,6 +445,23 @@ mod tests {
         assert_eq!(
             controls.bindings(Action::Left).collect::<Vec<_>>(),
             [Binding::Key(KeyCode::Char('j'))]
+        );
+        // Keys and gamepad buttons are replaced separately.
+        controls.add(Action::Left, GamepadButton::DPadLeft);
+        controls.rebind_device(Action::Left, 'h');
+        assert_eq!(
+            controls.bindings(Action::Left).collect::<Vec<_>>(),
+            [Binding::Button(GamepadButton::DPadLeft), Binding::from('h')]
+        );
+        controls.rebind_device(Action::Left, GamepadButton::West);
+        assert_eq!(
+            controls.bindings(Action::Left).collect::<Vec<_>>(),
+            [Binding::from('h'), Binding::Button(GamepadButton::West)]
+        );
+        controls.replace_bindings(Action::Left, [Binding::from('k')]);
+        assert_eq!(
+            controls.bindings(Action::Left).collect::<Vec<_>>(),
+            [Binding::Button(GamepadButton::West), Binding::from('k')]
         );
         controls.unbind(Action::Fire);
         assert_eq!(controls.bindings(Action::Fire).count(), 0);

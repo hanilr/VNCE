@@ -8,7 +8,7 @@
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{ActionMap, Binding, Rng, Scene, Transition};
 use vnce::vnce_runtime::{Context, FpsLimit};
-use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
+use vnce::vnce_term::{Event, Frame, GamepadEvent, GamepadEventKind, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{
     Block, BorderType, Clear, Line, List, ListState, Padding, Slider, Span, StatefulWidget,
     TextInputState, Widget,
@@ -530,9 +530,11 @@ fn binding_names(controls: &ActionMap<Action>, action: Action) -> String {
 
 /// Whether a key of `action` is also used by another action. Esc and Space are left out:
 /// pause / back and confirm share them on purpose.
+/// Gamepad buttons are left out too: menus and play share them on purpose.
 fn has_clash(controls: &ActionMap<Action>, action: Action) -> bool {
     controls.bindings(action).any(|binding| {
-        binding != Binding::Key(KeyCode::Esc)
+        !binding.is_gamepad()
+            && binding != Binding::Key(KeyCode::Esc)
             && binding != Binding::Key(KeyCode::Char(' '))
             && ACTIONS.iter().any(|&(other, _)| {
                 other != action && controls.bindings(other).any(|b| b == binding)
@@ -547,24 +549,29 @@ impl Scene<Shared> for Controls {
         _ctx: &mut Context,
         event: &Event,
     ) -> Transition<Shared> {
-        let Event::Key(key) = event else {
-            return Transition::None;
-        };
-        if !self.waiting || key.kind != KeyEventKind::Press {
+        if !self.waiting {
             return Transition::None;
         }
+        // A key, or a gamepad button, for the selected action. It replaces the action's
+        // bindings on that device only, so keys and pad buttons are chosen separately.
+        let binding = match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                // Esc cancels, so it cannot be chosen here.
+                KeyCode::Esc => None,
+                KeyCode::Char(c) => Some(Binding::Key(KeyCode::Char(c.to_ascii_lowercase()))),
+                other => Some(Binding::Key(other)),
+            },
+            Event::Gamepad(GamepadEvent {
+                kind: GamepadEventKind::ButtonPressed(button),
+                ..
+            }) => Some(Binding::Button(*button)),
+            _ => return Transition::None,
+        };
         self.waiting = false;
         self.settle = true;
-        // Esc cancels, so it cannot be chosen here.
-        if key.code == KeyCode::Esc {
-            return Transition::None;
-        }
-        let code = match key.code {
-            KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
-            other => other,
-        };
-        if let Some(&(action, _)) = self.menu.selected().and_then(|row| ACTIONS.get(row)) {
-            shared.controls.rebind(action, code);
+        let action = self.menu.selected().and_then(|row| ACTIONS.get(row));
+        if let (Some(binding), Some(&(action, _))) = (binding, action) {
+            shared.controls.rebind_device(action, binding);
             shared.sounds.play(Sfx::Blip);
         }
         Transition::None
@@ -610,7 +617,7 @@ impl Scene<Shared> for Controls {
             .enumerate()
             .map(|(row, &(action, name))| {
                 let keys = if self.waiting && self.menu.selected() == Some(row) {
-                    "press a key… (Esc: cancel)".to_owned()
+                    "key or pad button… (Esc: cancel)".to_owned()
                 } else {
                     binding_names(&shared.controls, action)
                 };

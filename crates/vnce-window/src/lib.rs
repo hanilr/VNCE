@@ -50,6 +50,7 @@
 )]
 
 mod atlas;
+mod gamepad;
 mod glyphs;
 mod keys;
 mod renderer;
