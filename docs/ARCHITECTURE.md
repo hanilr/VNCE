@@ -372,5 +372,10 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-24-mobile.md`](plans/2026-11-25-phase-24-mobile.md).
 25. **Phase 25 (planned, research):** Higher bit depths and sample rates for sound — see
    [`plans/2026-11-25-phase-25-high-resolution-audio.md`](plans/2026-11-25-phase-25-high-resolution-audio.md).
+26. **Phase 26 (planned):** The VNCE logo as the default icon — see
+   [`plans/2026-11-25-phase-26-default-icon.md`](plans/2026-11-25-phase-26-default-icon.md).
+27. **Phase 27 (planned):** Better mouse support: pixel positions, picture coordinates,
+   more buttons, drags, mouse look and cursor shapes — see
+   [`plans/2026-11-26-phase-27-mouse.md`](plans/2026-11-26-phase-27-mouse.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.
