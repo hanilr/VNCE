@@ -54,10 +54,6 @@ impl Gamepads {
     }
 
     /// Rumbles every connected pad that can at `strength` (`0.0..=1.0`) for `duration`.
-    #[allow(
-        dead_code,
-        reason = "the game asks for rumble through window control (step 4)"
-    )]
     #[cfg_attr(
         not(feature = "gamepad"),
         allow(clippy::unused_self, reason = "nothing to rumble without the feature")
@@ -193,10 +189,6 @@ mod real {
             self.effects.retain(|(_, end)| *end > now);
         }
 
-        #[allow(
-            dead_code,
-            reason = "the game asks for rumble through window control (step 4)"
-        )]
         pub(super) fn rumble(&mut self, strength: f32, duration: Duration) {
             let pads: Vec<gilrs::GamepadId> = self
                 .gilrs

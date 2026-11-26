@@ -12,7 +12,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 use vnce_core::{Buffer, Color, Modifiers, Size, Style};
 
-use crate::native::FrameView;
+use crate::native::{FrameView, WindowRequest, WindowState};
 use crate::query::{QUERY_TIMEOUT, TerminalInfo};
 use crate::terminal::TerminalOptions;
 
@@ -96,6 +96,20 @@ pub trait Backend {
     /// [`Terminal`]: crate::Terminal
     fn present(&mut self, frame: &FrameView<'_>) -> Option<io::Result<()>> {
         let _ = frame;
+        None
+    }
+
+    /// Carries out a game's request to its window (fullscreen, cursor, title, ...).
+    ///
+    /// The default implementation ignores it, as terminals do.
+    fn window(&mut self, request: &WindowRequest) {
+        let _ = request;
+    }
+
+    /// The state of the native window, or `None` for a terminal.
+    ///
+    /// The default implementation returns `None`.
+    fn window_state(&self) -> Option<WindowState> {
         None
     }
 }

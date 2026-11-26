@@ -19,7 +19,7 @@ use vnce_runtime::Driver;
 use vnce_term::input::{MouseButton, MouseEvent, MouseEventKind};
 use vnce_term::{
     Backend, Event, FrameView, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, TerminalInfo,
-    TerminalOptions,
+    TerminalOptions, WindowRequest, WindowState,
 };
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -122,6 +122,12 @@ struct State {
     screenshot: Option<(PathBuf, u64)>,
     /// The gamepads (none without the `gamepad` feature).
     pads: Gamepads,
+    /// What the game asked for (see [`WindowRequest`]).
+    cursor_visible: bool,
+    vsync: bool,
+    smooth_scaling: bool,
+    /// The present modes the surface supports, to switch vsync.
+    present_modes: Vec<wgpu::PresentMode>,
 }
 
 impl State {
@@ -154,6 +160,54 @@ impl State {
         let row = ((y - f64::from(self.layout.offset.1)) / f64::from(self.layout.cell.1)).floor();
         let clamp = |v: f64, max: u16| v.clamp(0.0, f64::from(max.saturating_sub(1))) as u16;
         (clamp(column, self.grid.0), clamp(row, self.grid.1))
+    }
+
+    /// The present mode for `vsync`: wait for the refresh, or show frames at once
+    /// (mailbox where available, so a frame never waits for the screen either).
+    fn present_mode(vsync: bool, modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+        if vsync {
+            wgpu::PresentMode::AutoVsync
+        } else if modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        }
+    }
+
+    /// Carries out a game's request.
+    fn request(&mut self, request: &WindowRequest) {
+        match request {
+            WindowRequest::Fullscreen(on) => self
+                .window
+                .set_fullscreen(on.then_some(Fullscreen::Borderless(None))),
+            WindowRequest::CursorVisible(on) => {
+                self.cursor_visible = *on;
+                self.window.set_cursor_visible(*on);
+            }
+            WindowRequest::Title(title) => self.window.set_title(title),
+            WindowRequest::Vsync(on) => {
+                if self.vsync != *on {
+                    self.vsync = *on;
+                    self.config.present_mode = Self::present_mode(*on, &self.present_modes);
+                    self.surface.configure(&self.device, &self.config);
+                }
+            }
+            WindowRequest::SmoothScaling(on) => self.smooth_scaling = *on,
+            WindowRequest::Rumble { strength, duration } => {
+                self.pads.rumble(*strength, *duration);
+            }
+            // Later kinds of requests are not known to this window.
+            _ => {}
+        }
+    }
+
+    fn window_state(&self) -> WindowState {
+        WindowState {
+            fullscreen: self.window.fullscreen().is_some(),
+            cursor_visible: self.cursor_visible,
+            vsync: self.vsync,
+            smooth_scaling: self.smooth_scaling,
+        }
     }
 
     fn toggle_fullscreen(&self) {
@@ -472,6 +526,14 @@ impl Backend for WindowBackend {
     fn present(&mut self, frame: &FrameView<'_>) -> Option<io::Result<()>> {
         Some(self.state.borrow_mut().present(frame))
     }
+
+    fn window(&mut self, request: &WindowRequest) {
+        self.state.borrow_mut().request(request);
+    }
+
+    fn window_state(&self) -> Option<WindowState> {
+        Some(self.state.borrow().window_state())
+    }
 }
 
 /// The engine's driver for the window: the clock and the window's events.
@@ -589,16 +651,7 @@ fn gpu_state(window: &Arc<Window>, options: &WindowOptions) -> Result<State, Str
         .ok_or("the window has no surface format")?;
     // Colors are written as sRGB values: draw through a view without sRGB conversion.
     let view_format = format.remove_srgb_suffix();
-    let present_mode = if options.vsync {
-        wgpu::PresentMode::AutoVsync
-    } else if capabilities
-        .present_modes
-        .contains(&wgpu::PresentMode::Mailbox)
-    {
-        wgpu::PresentMode::Mailbox
-    } else {
-        wgpu::PresentMode::AutoNoVsync
-    };
+    let present_mode = State::present_mode(options.vsync, &capabilities.present_modes);
     let size = window.inner_size();
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -640,6 +693,10 @@ fn gpu_state(window: &Arc<Window>, options: &WindowOptions) -> Result<State, Str
         presented: 0,
         screenshot: options.screenshot.clone(),
         pads: Gamepads::empty(),
+        cursor_visible: true,
+        vsync: options.vsync,
+        smooth_scaling: true,
+        present_modes: capabilities.present_modes.clone(),
     };
     state.pads = Gamepads::new(&mut state.events);
     state.resize();

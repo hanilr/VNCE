@@ -99,6 +99,8 @@ pub struct Play {
     respawn: (Vec3, f32),
     /// Seconds until the respawn (0 while flying).
     crashed: f32,
+    /// Rumble to ask for in the next update: strength and length.
+    rumble: Option<(f32, Duration)>,
     countdown: f32,
     /// Seconds flown.
     clock: f32,
@@ -165,6 +167,7 @@ impl Play {
             previous: start,
             respawn: (start, yaw),
             crashed: 0.0,
+            rumble: None,
             countdown: COUNTDOWN,
             clock: 0.0,
             time_left: FREE_START,
@@ -305,6 +308,9 @@ impl Play {
 
     fn crash(&mut self, shared: &Shared) {
         self.effect(shared, Sfx::Crash);
+        if !self.demo {
+            self.rumble = Some((0.9, Duration::from_millis(450)));
+        }
         let at = self.craft.position;
         self.burst(
             at,
@@ -350,6 +356,9 @@ impl Play {
 
     fn pass_ring(&mut self, shared: &Shared, ring: Ring) {
         self.passed += 1;
+        if !self.demo {
+            self.rumble = Some((0.35, Duration::from_millis(120)));
+        }
         self.craft.boost = flight::BOOST_TIME;
         let color = ring.kind.color();
         self.flash = (0.5, color);
@@ -944,13 +953,19 @@ impl Scene<Shared> for Play {
         shared.mode = self.mode;
         shared.sounds.music(Mood::Flight);
         shared.sounds.engine(true);
+        ctx.set_cursor_visible(false);
     }
 
-    fn resume(&mut self, shared: &mut Shared, _ctx: &mut Context) {
+    fn resume(&mut self, shared: &mut Shared, ctx: &mut Context) {
         shared.sounds.engine(true);
+        ctx.set_cursor_visible(false);
     }
 
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
+        // A pad rumbles (in a window) for what happened in the previous update.
+        if let Some((strength, duration)) = self.rumble.take() {
+            ctx.rumble(strength, duration);
+        }
         match shared.request.take() {
             Some(Request::Play(mode, seed)) => return Transition::switch(Play::new(mode, seed)),
             Some(Request::Title) => {

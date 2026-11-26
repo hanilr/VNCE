@@ -1,10 +1,10 @@
 //! The game context: time, input, settings and control of the loop.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 
 use vnce_core::Size;
-use vnce_term::{Capabilities, GraphicsMode, TerminalInfo};
+use vnce_term::{Capabilities, GraphicsMode, TerminalInfo, WindowRequest, WindowState};
 
 use crate::config::{self, ConfigError, FpsLimit, RunConfig};
 use crate::input::InputState;
@@ -13,9 +13,10 @@ use crate::meter::RateMeter;
 /// Everything a [`Game`](crate::Game) can read or change while it runs.
 ///
 /// The methods that request a change ([`Context::quit`], [`Context::set_paused`],
-/// [`Context::set_fps_limit`], [`Context::set_update_rate`] and
-/// [`Context::set_graphics_mode`]) take `&self`, so they can be called while the input
-/// from [`Context::input`] is still in use:
+/// [`Context::set_fps_limit`], [`Context::set_update_rate`],
+/// [`Context::set_graphics_mode`] and the window requests such as
+/// [`Context::set_fullscreen`]) take `&self`, so they can be called while the input from
+/// [`Context::input`] is still in use:
 ///
 /// ```
 /// use vnce_runtime::{Context, Game};
@@ -59,6 +60,10 @@ pub struct Context {
     pub(crate) graphics_mode: GraphicsMode,
     /// A graphics mode change requested by the game, applied before the next frame.
     pub(crate) graphics_request: Cell<Option<GraphicsMode>>,
+    /// Requests to the native window, handed to the backend before the next frame.
+    pub(crate) window_requests: RefCell<Vec<WindowRequest>>,
+    /// The native window's state after the last frame (`None` in a terminal).
+    pub(crate) window_state: Option<WindowState>,
 }
 
 impl Context {
@@ -88,6 +93,8 @@ impl Context {
             terminal_info,
             graphics_mode,
             graphics_request: Cell::new(None),
+            window_requests: RefCell::new(Vec::new()),
+            window_state: None,
         }
     }
 
@@ -235,6 +242,65 @@ impl Context {
         self.graphics_request.set(Some(mode));
     }
 
+    /// Returns `true` when the game runs in a native window (`vnce-window`) rather than a
+    /// terminal; settings screens show the window's rows only then.
+    #[must_use]
+    pub fn is_windowed(&self) -> bool {
+        self.terminal_info.native_window
+    }
+
+    /// The native window's state (fullscreen, cursor, vsync, scaling) including the
+    /// requests made since the last frame, or `None` in a terminal.
+    #[must_use]
+    pub fn window_state(&self) -> Option<WindowState> {
+        let state = self.window_state?;
+        Some(
+            self.window_requests
+                .borrow()
+                .iter()
+                .fold(state, WindowState::with),
+        )
+    }
+
+    /// Asks the native window to do something, from the next frame on. Terminals ignore
+    /// it. The setters below are shortcuts for the usual requests.
+    pub fn request_window(&self, request: WindowRequest) {
+        self.window_requests.borrow_mut().push(request);
+    }
+
+    /// Switches the native window's borderless fullscreen on or off (the player can also
+    /// press F11 or Alt+Enter).
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        self.request_window(WindowRequest::Fullscreen(fullscreen));
+    }
+
+    /// Shows or hides the mouse cursor over the native window.
+    pub fn set_cursor_visible(&self, visible: bool) {
+        self.request_window(WindowRequest::CursorVisible(visible));
+    }
+
+    /// Changes the native window's title.
+    pub fn set_title(&self, title: impl Into<String>) {
+        self.request_window(WindowRequest::Title(title.into()));
+    }
+
+    /// Makes the native window wait for the screen's refresh (no tearing) or not (lower
+    /// latency, frames as fast as the frame limit allows).
+    pub fn set_vsync(&self, vsync: bool) {
+        self.request_window(WindowRequest::Vsync(vsync));
+    }
+
+    /// Scales pictures in the native window smoothly (`true`) or with sharp pixels.
+    pub fn set_smooth_scaling(&self, smooth: bool) {
+        self.request_window(WindowRequest::SmoothScaling(smooth));
+    }
+
+    /// Rumbles the connected gamepads at `strength` (`0.0..=1.0`) for `duration`, where
+    /// the pad and the system can.
+    pub fn rumble(&self, strength: f32, duration: Duration) {
+        self.request_window(WindowRequest::Rumble { strength, duration });
+    }
+
     fn graphics_requests_or_current(&self) -> GraphicsMode {
         self.graphics_request.get().unwrap_or(self.graphics_mode)
     }
@@ -313,6 +379,24 @@ mod tests {
         ctx.set_graphics_mode(sixel);
         assert_eq!(ctx.graphics_mode(), sixel);
         assert_eq!(ctx.graphics_request.get(), Some(sixel));
+    }
+
+    #[test]
+    fn window_requests_wait_for_the_loop() {
+        let mut ctx = context();
+        assert!(!ctx.is_windowed());
+        assert_eq!(ctx.window_state(), None, "a terminal has no window");
+        ctx.window_state = Some(WindowState {
+            cursor_visible: true,
+            ..WindowState::default()
+        });
+        ctx.set_fullscreen(true);
+        ctx.set_cursor_visible(false);
+        ctx.set_title("Game");
+        ctx.rumble(0.5, Duration::from_millis(100));
+        let state = ctx.window_state().unwrap();
+        assert!(state.fullscreen && !state.cursor_visible);
+        assert_eq!(ctx.window_requests.borrow().len(), 4);
     }
 
     #[test]

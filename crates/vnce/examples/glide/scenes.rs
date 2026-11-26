@@ -8,7 +8,9 @@
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{ActionMap, Binding, Rng, Scene, Transition};
 use vnce::vnce_runtime::{Context, FpsLimit};
-use vnce::vnce_term::{Event, Frame, GamepadEvent, GamepadEventKind, KeyCode, KeyEventKind};
+use vnce::vnce_term::{
+    Event, Frame, GamepadEvent, GamepadEventKind, KeyCode, KeyEventKind, WindowState,
+};
 use vnce::vnce_ui::{
     Block, BorderType, Clear, Line, List, ListState, Padding, Slider, Span, StatefulWidget,
     TextInputState, Widget,
@@ -91,6 +93,8 @@ impl Scene<Shared> for Title {
         shared.sounds.engine(false);
         shared.sounds.music(Mood::Menu);
         shared.detect_modes(ctx);
+        // In a window the cursor hides while flying; the menus show it again.
+        ctx.set_cursor_visible(true);
     }
 
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
@@ -285,6 +289,10 @@ impl Pause {
 const PAUSE_MENU: [&str; 4] = ["Continue", "Settings", "Restart", "Back to the title"];
 
 impl Scene<Shared> for Pause {
+    fn start(&mut self, _shared: &mut Shared, ctx: &mut Context) {
+        ctx.set_cursor_visible(true);
+    }
+
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
         navigate(shared, ctx, &mut self.menu, PAUSE_MENU.len());
         let input = ctx.input();
@@ -345,8 +353,8 @@ impl Settings {
 }
 
 /// Rows: music, effects, frame rate, display, upscaling, renderer, anti-aliasing,
-/// resolution, performance, controls, back.
-const SETTINGS_ROWS: usize = 11;
+/// resolution, performance, fullscreen, vsync (the last two in a window), controls, back.
+const SETTINGS_ROWS: usize = 13;
 
 impl Scene<Shared> for Settings {
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
@@ -367,7 +375,7 @@ impl Scene<Shared> for Settings {
             return Transition::push(Controls::new());
         }
         // Enter flips the switches too.
-        let switch = [4, 5, 6, 8].contains(&row);
+        let switch = [4, 5, 6, 8, 9, 10].contains(&row);
         let direction = if direction == 0 && confirm && switch {
             1
         } else {
@@ -423,6 +431,16 @@ impl Scene<Shared> for Settings {
                 shared.resolution = RESOLUTIONS[step(current, direction, RESOLUTIONS.len())];
             }
             8 => shared.perf = !shared.perf,
+            9 | 10 => {
+                let Some(window) = ctx.window_state() else {
+                    return Transition::None;
+                };
+                if row == 9 {
+                    ctx.set_fullscreen(!window.fullscreen);
+                } else {
+                    ctx.set_vsync(!window.vsync);
+                }
+            }
             _ => return Transition::None,
         }
         shared.sounds.play(Sfx::Blip);
@@ -454,6 +472,11 @@ impl Scene<Shared> for Settings {
         };
         let switch =
             |on: bool, yes: &str, no: &str| if on { yes.to_owned() } else { no.to_owned() };
+        // The window's switches; in a terminal they say where they work.
+        let window = |on: fn(&WindowState) -> bool| match ctx.window_state() {
+            Some(state) => switch(on(&state), "on", "off"),
+            None => "window only".to_owned(),
+        };
         let items = vec![
             volume_row("Music          ", shared.music_volume),
             volume_row("Effects        ", shared.effects_volume),
@@ -473,6 +496,8 @@ impl Scene<Shared> for Settings {
                 "Performance    ◀ {} ▶",
                 switch(shared.perf, "shown", "hidden")
             )),
+            Line::from(format!("Fullscreen     ◀ {} ▶", window(|w| w.fullscreen))),
+            Line::from(format!("Vsync          ◀ {} ▶", window(|w| w.vsync))),
             Line::from("Controls ▸"),
             Line::from("Back"),
         ];
@@ -675,9 +700,10 @@ impl End {
 }
 
 impl Scene<Shared> for End {
-    fn start(&mut self, shared: &mut Shared, _ctx: &mut Context) {
+    fn start(&mut self, shared: &mut Shared, ctx: &mut Context) {
         shared.sounds.engine(false);
         shared.sounds.music(Mood::Menu);
+        ctx.set_cursor_visible(true);
     }
 
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {

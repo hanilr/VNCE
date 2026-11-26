@@ -6,9 +6,73 @@
 use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use vnce_core::{Buffer, Rect};
 use vnce_raster::Canvas;
+
+/// A request from the game to a native window (see [`Backend::window`]). Terminals ignore
+/// every request.
+///
+/// New kinds of requests may be added in later versions, so a `match` needs a `_` arm.
+///
+/// [`Backend::window`]: crate::Backend::window
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum WindowRequest {
+    /// Borderless fullscreen on (`true`) or off.
+    Fullscreen(bool),
+    /// Shows or hides the mouse cursor over the window.
+    CursorVisible(bool),
+    /// Changes the title bar.
+    Title(String),
+    /// Waits for the screen's refresh before showing a frame (no tearing) or not.
+    Vsync(bool),
+    /// Scales pictures smoothly (`true`) or with sharp pixels.
+    SmoothScaling(bool),
+    /// Rumbles the connected gamepads at `strength` (`0.0..=1.0`) for `duration`.
+    Rumble {
+        /// How strongly, from `0.0` to `1.0`.
+        strength: f32,
+        /// How long.
+        duration: Duration,
+    },
+}
+
+/// What a native window is doing now, for settings screens (see
+/// [`Backend::window_state`]).
+///
+/// [`Backend::window_state`]: crate::Backend::window_state
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent switches of a settings screen"
+)]
+pub struct WindowState {
+    /// Borderless fullscreen (F11 and Alt+Enter switch it too).
+    pub fullscreen: bool,
+    /// The mouse cursor is shown over the window.
+    pub cursor_visible: bool,
+    /// Frames wait for the screen's refresh.
+    pub vsync: bool,
+    /// Pictures are scaled smoothly (else with sharp pixels).
+    pub smooth_scaling: bool,
+}
+
+impl WindowState {
+    /// The state after `request`.
+    #[must_use]
+    pub fn with(mut self, request: &WindowRequest) -> Self {
+        match request {
+            WindowRequest::Fullscreen(on) => self.fullscreen = *on,
+            WindowRequest::CursorVisible(on) => self.cursor_visible = *on,
+            WindowRequest::Vsync(on) => self.vsync = *on,
+            WindowRequest::SmoothScaling(on) => self.smooth_scaling = *on,
+            WindowRequest::Title(_) | WindowRequest::Rumble { .. } => {}
+        }
+        self
+    }
+}
 
 /// A picture that already lives where the backend draws, for example a GPU texture,
 /// shown with [`Frame::draw_texture`](crate::Frame::draw_texture) without copying its

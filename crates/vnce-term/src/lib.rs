@@ -31,6 +31,6 @@ pub use capabilities::Capabilities;
 pub use gamepad::{GamepadAxis, GamepadButton, GamepadEvent, GamepadEventKind, GamepadId};
 pub use graphics::{GraphicsMode, GraphicsProtocol};
 pub use input::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, ParseKeyCodeError};
-pub use native::{ExternalImage, FrameView, ImageView};
+pub use native::{ExternalImage, FrameView, ImageView, WindowRequest, WindowState};
 pub use query::TerminalInfo;
 pub use terminal::{Frame, Terminal, TerminalOptions};

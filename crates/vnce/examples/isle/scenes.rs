@@ -9,7 +9,9 @@ use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{ActionMap, Binding, Rng, Scene, Transition};
 use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Font, Rgba};
 use vnce::vnce_runtime::{Context, FpsLimit};
-use vnce::vnce_term::{Event, Frame, GamepadEvent, GamepadEventKind, KeyCode, KeyEventKind};
+use vnce::vnce_term::{
+    Event, Frame, GamepadEvent, GamepadEventKind, KeyCode, KeyEventKind, WindowState,
+};
 use vnce::vnce_ui::{
     Block, BorderType, Clear, Line, List, ListState, Padding, Slider, Span, StatefulWidget,
     TextInputState, Widget,
@@ -430,8 +432,8 @@ impl Settings {
 }
 
 /// Rows: music, effects, frame rate, display, upscaling, ocean, minimap, performance,
-/// controls, back.
-const SETTINGS_ROWS: usize = 10;
+/// fullscreen, vsync (the last two in a window), controls, back.
+const SETTINGS_ROWS: usize = 12;
 
 impl Scene<Shared> for Settings {
     fn update(&mut self, shared: &mut Shared, ctx: &mut Context) -> Transition<Shared> {
@@ -452,7 +454,7 @@ impl Scene<Shared> for Settings {
             return Transition::push(Controls::new());
         }
         // Enter flips the switches too.
-        let direction = if direction == 0 && confirm && (4..=7).contains(&row) {
+        let direction = if direction == 0 && confirm && (4..=9).contains(&row) {
             1
         } else {
             direction
@@ -496,6 +498,16 @@ impl Scene<Shared> for Settings {
             }
             6 => shared.map = !shared.map,
             7 => shared.perf = !shared.perf,
+            8 | 9 => {
+                let Some(window) = ctx.window_state() else {
+                    return Transition::None;
+                };
+                if row == 8 {
+                    ctx.set_fullscreen(!window.fullscreen);
+                } else {
+                    ctx.set_vsync(!window.vsync);
+                }
+            }
             _ => return Transition::None,
         }
         shared.sounds.play(Sfx::Blip);
@@ -520,6 +532,11 @@ impl Scene<Shared> for Settings {
         };
         let switch =
             |on: bool, yes: &str, no: &str| if on { yes.to_owned() } else { no.to_owned() };
+        // The window's switches; in a terminal they say where they work.
+        let window = |on: fn(&WindowState) -> bool| match ctx.window_state() {
+            Some(state) => switch(on(&state), "on", "off"),
+            None => "window only".to_owned(),
+        };
         let items = vec![
             volume_row("Music        ", shared.music_volume),
             volume_row("Effects      ", shared.effects_volume),
@@ -541,6 +558,8 @@ impl Scene<Shared> for Settings {
                 "Performance  ◀ {} ▶",
                 switch(shared.perf, "shown", "hidden")
             )),
+            Line::from(format!("Fullscreen   ◀ {} ▶", window(|w| w.fullscreen))),
+            Line::from(format!("Vsync        ◀ {} ▶", window(|w| w.vsync))),
             Line::from("Controls ▸"),
             Line::from("Back"),
         ];

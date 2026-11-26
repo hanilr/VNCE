@@ -90,6 +90,7 @@ where
         terminal.graphics_mode(),
     );
     ctx.set_capabilities(terminal.capabilities());
+    ctx.window_state = terminal.backend().window_state();
     game.init(&mut ctx);
 
     let mut previous = driver.now();
@@ -138,6 +139,10 @@ where
             terminal.set_graphics_mode(mode);
             ctx.graphics_mode = terminal.graphics_mode();
         }
+        for request in ctx.window_requests.take() {
+            terminal.backend_mut().window(&request);
+        }
+        ctx.window_state = terminal.backend().window_state();
         terminal.autoresize()?;
         ctx.size = terminal.size();
         terminal.draw(|frame| game.render(&ctx, frame))?;

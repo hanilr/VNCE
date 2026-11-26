@@ -244,6 +244,10 @@ impl Shared {
         save.set("map", self.map);
         save.set("gpu", gpu);
         save.set("frame_rate", ctx.fps_limit());
+        if let Some(window) = ctx.window_state() {
+            save.set("fullscreen", window.fullscreen);
+            save.set("vsync", window.vsync);
+        }
         save.set(display_key(ctx), ctx.graphics_mode());
         for (action, name) in ACTIONS {
             save.set_bindings(&format!("keys.{name}"), self.controls.bindings(action));
@@ -273,6 +277,15 @@ impl Shared {
             .filter(|mode| self.modes.contains(mode))
         {
             ctx.set_graphics_mode(mode);
+        }
+        // The window's own settings (a terminal ignores them).
+        if ctx.is_windowed() {
+            if let Some(fullscreen) = self.save.get::<bool>("fullscreen") {
+                ctx.set_fullscreen(fullscreen);
+            }
+            if let Some(vsync) = self.save.get::<bool>("vsync") {
+                ctx.set_vsync(vsync);
+            }
         }
     }
 
