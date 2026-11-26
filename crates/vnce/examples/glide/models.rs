@@ -55,12 +55,12 @@ impl Tri {
     /// The triangle moved by `model` (rotation, uniform scale and translation).
     pub fn transformed(&self, model: &Mat4) -> Self {
         let n = if self.is_lit() {
-            normalize(model.apply_direction(self.n))
+            normalize(model.transform_direction(self.n))
         } else {
             self.n
         };
         Self {
-            p: self.p.map(|p| model.point(p)),
+            p: self.p.map(|p| model.transform_point(p)),
             n,
             color: self.color,
         }
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn transformed_triangles_keep_unit_normals() {
-        let model = Mat4::translation([5.0, 1.0, 0.0]) * Mat4::heading(1.0) * Mat4::scale(2.0);
+        let model = Mat4::translation([5.0, 1.0, 0.0]) * Mat4::heading(1.0) * Mat4::scale([2.0; 3]);
         for tri in craft() {
             let moved = tri.transformed(&model);
             let length = dot(moved.n, moved.n).sqrt();

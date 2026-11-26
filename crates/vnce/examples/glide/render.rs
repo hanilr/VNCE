@@ -564,7 +564,7 @@ impl Projector {
         if fogged >= 0.99 {
             return;
         }
-        let v = tri.p.map(|p| self.view.point(p));
+        let v = tri.p.map(|p| self.view.transform_point(p));
         // Clip against the near plane: keep the part in front (z < -NEAR).
         let limit = -NEAR;
         let inside = v.map(|p| p[2] < limit);
@@ -632,8 +632,8 @@ impl Projector {
 #[cfg(feature = "gpu")]
 mod gpu {
     use vnce::vnce_gpu::{
-        Fog, Gpu, GpuOptions, Light, Mat4 as GpuMat4, Mesh, MeshDraw, MeshRenderer,
-        MeshRendererOptions, MeshScene, Readback, RenderTarget, ShaderQuad, Vertex,
+        Fog, Gpu, GpuOptions, Light, Mesh, MeshDraw, MeshRenderer, MeshRendererOptions, MeshScene,
+        Readback, RenderTarget, ShaderQuad, Vertex,
     };
     use vnce::vnce_raster::{Canvas, Rgba};
     use vnce::vnce_term::ExternalImage;
@@ -651,10 +651,6 @@ mod gpu {
             .collect();
         let indices: Vec<u32> = (0..vertices.len() as u32).collect();
         Mesh::new(gpu, &vertices, &indices)
-    }
-
-    fn convert(m: &Mat4) -> GpuMat4 {
-        GpuMat4 { cols: m.cols }
     }
 
     pub struct GpuRenderer {
@@ -810,22 +806,18 @@ mod gpu {
                     camera: camera.eye,
                 },
             );
-            let view_projection = convert(&camera.view_projection());
+            let view_projection = camera.view_projection();
             let mut draws = Vec::new();
             let mut stats = Stats::default();
             for (_, mesh) in self.chunks.visible(&camera) {
                 stats.chunks += 1;
                 stats.triangles += mesh.index_count() as usize / 3;
-                draws.push(MeshDraw::new(mesh, view_projection, GpuMat4::IDENTITY));
+                draws.push(MeshDraw::new(mesh, view_projection, Mat4::IDENTITY));
             }
             for object in &view.objects {
                 if let Some((_, mesh)) = self.models.iter().find(|(m, _)| *m == object.model) {
                     stats.triangles += mesh.index_count() as usize / 3;
-                    draws.push(MeshDraw::new(
-                        mesh,
-                        view_projection,
-                        convert(&object.transform),
-                    ));
+                    draws.push(MeshDraw::new(mesh, view_projection, object.transform));
                 }
             }
             if (self.target.width(), self.target.height()) != (width, height) {
@@ -891,7 +883,7 @@ mod tests {
         let terrain = Terrain::new(4);
         let mut renderer = Renderer::new(false, 1);
         let eye = [0.0, terrain.surface(0.0, 0.0).max(0.0) + 120.0, 0.0];
-        let camera = Camera::new(eye, direction(0.4, -0.25), [0.0, 1.0, 0.0], 1.6);
+        let camera = crate::math::camera(eye, direction(0.4, -0.25), [0.0, 1.0, 0.0], 1.6);
         renderer.warm_up(&terrain, &camera);
         let view = View {
             camera,

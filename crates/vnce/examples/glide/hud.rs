@@ -312,7 +312,8 @@ mod tests {
     #[test]
     fn instruments_draw_inside_the_picture() {
         let mut canvas = Canvas::filled(200, 120, Rgba::rgb(40, 80, 120));
-        let camera = Camera::new([0.0, 50.0, 0.0], direction(0.0, 0.0), [0.0, 1.0, 0.0], 1.6);
+        let camera =
+            crate::math::camera([0.0, 50.0, 0.0], direction(0.0, 0.0), [0.0, 1.0, 0.0], 1.6);
         compass(&mut canvas, 0.3, &[(1.0, Rgba::rgb(255, 200, 60))]);
         radar(
             &mut canvas,

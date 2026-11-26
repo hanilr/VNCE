@@ -7,6 +7,7 @@
 //! - [`style`]: [`Style`] and text [`Modifiers`].
 //! - [`cell`]: a single terminal [`Cell`].
 //! - [`buffer`]: a grid of cells ([`Buffer`]) with Unicode-aware writing and diffing.
+//! - [`math`]: vectors, a 4×4 matrix and a perspective camera for 2D and 3D games.
 //!
 //! This crate is part of the **Variation** ecosystem.
 
@@ -14,6 +15,7 @@ pub mod buffer;
 pub mod cell;
 pub mod color;
 pub mod geometry;
+pub mod math;
 pub mod style;
 
 pub use buffer::{Buffer, CellUpdate, Diff};

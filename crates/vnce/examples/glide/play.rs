@@ -568,10 +568,10 @@ impl Play {
                 let eye = self.chase_eye.unwrap_or_else(|| self.chase_target());
                 let look = add_scaled(craft.position, craft.forward(), 12.0);
                 let up = normalize(lerp([0.0, 1.0, 0.0], craft.up(), 0.35));
-                Camera::new(eye, sub(look, eye), up, aspect)
+                crate::math::camera(eye, sub(look, eye), up, aspect)
             }
-            CameraKind::Cockpit => Camera::new(
-                craft.model().point([0.0, 0.85, -1.4]),
+            CameraKind::Cockpit => crate::math::camera(
+                craft.model().transform_point([0.0, 0.85, -1.4]),
                 craft.forward(),
                 craft.up(),
                 aspect,
@@ -581,7 +581,7 @@ impl Play {
                 let forward = direction(yaw, pitch);
                 let mut eye = add_scaled(craft.position, forward, -distance);
                 eye[1] = eye[1].max(self.terrain.surface(eye[0], eye[2]) + 2.0);
-                Camera::new(eye, sub(craft.position, eye), [0.0, 1.0, 0.0], aspect)
+                crate::math::camera(eye, sub(craft.position, eye), [0.0, 1.0, 0.0], aspect)
             }
         }
     }
@@ -609,7 +609,7 @@ impl Play {
                     model: Model::Shadow,
                     transform: Mat4::translation([x, ground + 0.35, z])
                         * Mat4::basis(right, up, back)
-                        * Mat4::scale(4.0 + height * 0.03),
+                        * Mat4::scale([4.0 + height * 0.03; 3]),
                 });
             }
         }
@@ -624,7 +624,7 @@ impl Play {
                 model: Model::Ring(ring.kind, index == first && !self.demo),
                 transform: Mat4::translation(ring.center)
                     * Mat4::basis(x, y, ring.normal)
-                    * Mat4::scale(RING_RADIUS),
+                    * Mat4::scale([RING_RADIUS; 3]),
             });
         }
         objects

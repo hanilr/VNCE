@@ -72,13 +72,14 @@ fn vnce_fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// The per-draw uniform: transforms to clip space and to world space, and the matrix for
-/// normals.
+/// normals. The matrices are stored as their columns ([`Mat4::cols`]), because `Mat4`
+/// comes from `vnce_core`, which does not depend on `bytemuck`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawUniform {
-    transform: Mat4,
-    model: Mat4,
-    normal: Mat4,
+    transform: [[f32; 4]; 4],
+    model: [[f32; 4]; 4],
+    normal: [[f32; 4]; 4],
 }
 
 /// The scene uniform (see `Scene` in the shader).
@@ -622,9 +623,9 @@ impl MeshRenderer {
         let mut bytes = vec![0_u8; self.stride as usize * draws.len()];
         for (chunk, draw) in bytes.chunks_mut(self.stride as usize).zip(draws) {
             let uniform = DrawUniform {
-                transform: draw.transform,
-                model: draw.model,
-                normal: normal_matrix(&draw.model),
+                transform: draw.transform.cols,
+                model: draw.model.cols,
+                normal: normal_matrix(&draw.model).cols,
             };
             chunk[..size_of::<DrawUniform>()].copy_from_slice(bytemuck::bytes_of(&uniform));
         }

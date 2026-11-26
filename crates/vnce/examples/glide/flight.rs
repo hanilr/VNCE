@@ -84,7 +84,7 @@ impl Craft {
 
     /// Where the exhaust leaves the craft.
     pub fn exhaust(&self) -> Vec3 {
-        self.model().point([0.0, 0.3, 3.3])
+        self.model().transform_point([0.0, 0.3, 3.3])
     }
 
     /// One step of `dt` seconds.
@@ -189,11 +189,11 @@ mod tests {
         craft.pitch = 0.3;
         craft.roll = 0.4;
         let model = craft.model();
-        let nose = sub(model.point([0.0, 0.0, -1.0]), craft.position);
+        let nose = sub(model.transform_point([0.0, 0.0, -1.0]), craft.position);
         assert!(dot(normalize(nose), craft.forward()) > 0.999);
         assert!(
             dot(
-                normalize(sub(model.point([0.0, 1.0, 0.0]), craft.position)),
+                normalize(sub(model.transform_point([0.0, 1.0, 0.0]), craft.position)),
                 craft.up()
             ) > 0.999
         );

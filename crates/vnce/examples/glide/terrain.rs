@@ -91,7 +91,7 @@ impl Prop {
     }
 
     pub fn model(&self) -> Mat4 {
-        Mat4::translation(self.position) * Mat4::heading(self.yaw) * Mat4::scale(self.scale)
+        Mat4::translation(self.position) * Mat4::heading(self.yaw) * Mat4::scale([self.scale; 3])
     }
 }
 
@@ -569,7 +569,7 @@ mod tests {
         // Far away: the old chunks are dropped, new ones built.
         cache.update([20.0 * CHUNK_SIZE, 50.0, 0.0], [1.0, 0.0, 0.0], 100, build);
         assert_eq!(cache.len(), near);
-        let camera = Camera::new(
+        let camera = crate::math::camera(
             [20.0 * CHUNK_SIZE, 50.0, 0.0],
             [1.0, -0.2, 0.0],
             [0.0, 1.0, 0.0],

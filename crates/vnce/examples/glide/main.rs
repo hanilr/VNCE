@@ -455,7 +455,7 @@ mod tests {
         Capabilities, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, Terminal, TestBackend,
     };
 
-    use crate::math::{Camera, direction};
+    use crate::math::direction;
     use crate::play::Play;
     use crate::render::{Renderer, View};
     use crate::sky::daylight;
@@ -592,7 +592,7 @@ mod tests {
         ] {
             let mut renderer = Renderer::new(gpu, 4);
             let eye = [300.0, terrain.surface(300.0, 200.0).max(0.0) + 110.0, 200.0];
-            let camera = Camera::new(eye, direction(yaw, pitch), [0.0, 1.0, 0.0], 1.6);
+            let camera = crate::math::camera(eye, direction(yaw, pitch), [0.0, 1.0, 0.0], 1.6);
             renderer.warm_up(&terrain, &camera);
             let view = View {
                 camera,
