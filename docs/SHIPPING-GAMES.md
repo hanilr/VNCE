@@ -98,6 +98,10 @@ assert_eq!(controls.bindings(Action::Jump).count(), 2);
   separately) and load saved controls with `replace_bindings`, so an old save file keeps
   the default pad buttons. The examples' controls screens take a key or a pad button.
 - `ctx.rumble(strength, duration)` rumbles the pads that can.
+- On Windows, the Switch Pro Controller, Joy-Cons and third-party pads in their "Switch"
+  mode are ignored: without Nintendo's handshake they send made-up presses. Tell players
+  to use such pads in their XInput mode (many have a mode switch or a button
+  combination) or through Steam Input.
 
 Settings screens can offer the window's switches: `ctx.set_fullscreen`,
 `ctx.set_vsync`, `ctx.set_cursor_visible` (hide it while playing with a pad or the keys),

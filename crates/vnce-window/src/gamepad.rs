@@ -3,6 +3,13 @@
 //!
 //! Without the feature, or when the system offers no gamepad support, [`Gamepads`] is
 //! empty and never sends events.
+//!
+//! On Windows, controllers that only work after a Nintendo handshake (the Switch Pro
+//! Controller, Joy-Cons, and the many third-party pads that pretend to be one in their
+//! "Switch" mode) are left out: read as plain game controllers, they send a steady stream
+//! of made-up button presses that would play the game by themselves. Such pads work in
+//! their `XInput` mode, or through Steam Input. On Linux the kernel's `hid-nintendo`
+//! driver does the handshake, so they are read there.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -101,6 +108,21 @@ mod real {
         effects: Vec<(Effect, Instant)>,
     }
 
+    /// Nintendo's vendor id.
+    const NINTENDO: u16 = 0x057E;
+
+    /// Whether a controller needs a Nintendo handshake before it sends real input: the
+    /// Switch Pro Controller (`0x2009`), the Joy-Cons (`0x2006`, `0x2007`) and the
+    /// charging grip (`0x200E`), and every pad that uses their ids.
+    pub(super) fn needs_handshake(vendor: Option<u16>, product: Option<u16>) -> bool {
+        vendor == Some(NINTENDO) && matches!(product, Some(0x2006 | 0x2007 | 0x2009 | 0x200E))
+    }
+
+    /// Whether the pad is left out on this system (see the module notes).
+    fn ignored(gamepad: &gilrs::Gamepad<'_>) -> bool {
+        cfg!(windows) && needs_handshake(gamepad.vendor_id(), gamepad.product_id())
+    }
+
     fn id(id: gilrs::GamepadId) -> GamepadId {
         GamepadId(u32::try_from(usize::from(id)).unwrap_or(u32::MAX))
     }
@@ -165,7 +187,7 @@ mod real {
         pub(super) fn new(events: &mut VecDeque<Event>) -> Option<Self> {
             // Some systems have no gamepad support at all; the game then simply sees none.
             let gilrs = Gilrs::new().ok()?;
-            for (pad, gamepad) in gilrs.gamepads() {
+            for (pad, gamepad) in gilrs.gamepads().filter(|(_, g)| !ignored(g)) {
                 events.push_back(Event::Gamepad(GamepadEvent::new(
                     id(pad),
                     GamepadEventKind::Connected(gamepad.name().to_owned()),
@@ -180,6 +202,9 @@ mod real {
         pub(super) fn poll(&mut self, events: &mut VecDeque<Event>) {
             while let Some(event) = self.gilrs.next_event() {
                 let gilrs = &self.gilrs;
+                if ignored(&gilrs.gamepad(event.id)) {
+                    continue;
+                }
                 let name = || gilrs.gamepad(event.id).name().to_owned();
                 if let Some(kind) = convert(&event.event, name) {
                     events.push_back(Event::Gamepad(GamepadEvent::new(id(event.id), kind)));
@@ -193,7 +218,7 @@ mod real {
             let pads: Vec<gilrs::GamepadId> = self
                 .gilrs
                 .gamepads()
-                .filter(|(_, pad)| pad.is_ff_supported())
+                .filter(|(_, pad)| pad.is_ff_supported() && !ignored(pad))
                 .map(|(pad, _)| pad)
                 .collect();
             if pads.is_empty() || strength <= 0.0 || duration.is_zero() {
@@ -255,6 +280,13 @@ mod real {
             assert_eq!(button(Button::C), None);
             assert_eq!(axis(Axis::RightZ), Some(GamepadAxis::RightTrigger));
             assert_eq!(axis(Axis::DPadX), None);
+            // Switch Pro Controllers (and pads in their "Switch" mode) need a handshake;
+            // other Nintendo devices and other vendors do not.
+            assert!(needs_handshake(Some(0x057E), Some(0x2009)));
+            assert!(needs_handshake(Some(0x057E), Some(0x2006)));
+            assert!(!needs_handshake(Some(0x057E), Some(0x0306)));
+            assert!(!needs_handshake(Some(0x045E), Some(0x2009)));
+            assert!(!needs_handshake(None, None));
         }
     }
 }

@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ActionMap::rebind_device` and `replace_bindings` to change keys and pad buttons
   separately.
 - `vnce-window` reads gamepads with `gilrs` (feature `gamepad`, on by default; Linux
-  builds need `libudev-dev`) and rumbles them.
+  builds need `libudev-dev`) and rumbles them. On Windows it ignores controllers that
+  need a Nintendo handshake (Switch Pro, Joy-Cons, pads in "Switch" mode), which send
+  made-up presses without it.
 - Window control from the game: `Context::set_fullscreen`, `set_cursor_visible`,
   `set_title`, `set_vsync`, `set_smooth_scaling`, `rumble`, `request_window`,
   `window_state` and `is_windowed`, through `Backend::window` and
