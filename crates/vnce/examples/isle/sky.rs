@@ -3,9 +3,10 @@
 //! that point lights are added into before it multiplies the scene.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
-use vnce::vnce_game::Rng;
-use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Rgba};
+use vnce::vnce_game::{Emitter, Rng, Spread};
+use vnce::vnce_raster::{BlitOptions, Canvas, Rgba};
 
 use crate::art;
 use crate::island::{Island, Prop, SIZE, index};
@@ -34,63 +35,34 @@ pub fn ambient(progress: f32) -> Rgba {
     stops[stops.len() - 1].1
 }
 
-/// A short-lived glowing particle in the world, falling under gravity.
-pub struct Spark {
-    /// Position in tiles and height in levels.
-    pub position: (f32, f32, f32),
-    pub velocity: (f32, f32, f32),
-    pub life: f32,
-    pub color: Rgba,
+/// Short-lived glowing particles in the world, falling under gravity: they fly off over
+/// the ground and up, with positions in tiles and height in levels.
+pub fn sparks() -> Emitter {
+    Emitter::new()
+        .spread(Spread::Circle)
+        .speed(0.6, 2.2)
+        .velocity([0.0, 0.0, 3.0])
+        .jitter([0.0, 0.0, 1.5])
+        .life(0.5, 1.2)
+        .gravity([0.0, 0.0, -9.0])
 }
 
 /// Sparks bursting from a point.
-pub fn burst(
-    sparks: &mut Vec<Spark>,
-    rng: &mut Rng,
-    at: (f32, f32, f32),
-    color: Rgba,
-    count: usize,
-) {
-    for _ in 0..count {
-        let angle = rng.unit() * std::f32::consts::TAU;
-        let speed = 0.6 + rng.unit() * 1.6;
-        sparks.push(Spark {
-            position: at,
-            velocity: (
-                angle.cos() * speed,
-                angle.sin() * speed,
-                1.5 + rng.unit() * 3.0,
-            ),
-            life: 0.5 + rng.unit() * 0.7,
-            color,
-        });
-    }
+pub fn burst(sparks: &mut Emitter, rng: &mut Rng, at: (f32, f32, f32), color: Rgba, count: usize) {
+    sparks.set_colors([color]);
+    sparks.burst(rng, [at.0, at.1, at.2], count);
 }
 
-pub fn update_sparks(sparks: &mut Vec<Spark>, seconds: f32) {
-    for spark in sparks.iter_mut() {
-        spark.life -= seconds;
-        spark.position.0 += spark.velocity.0 * seconds;
-        spark.position.1 += spark.velocity.1 * seconds;
-        spark.position.2 += spark.velocity.2 * seconds;
-        spark.velocity.2 -= 9.0 * seconds;
-    }
-    sparks.retain(|spark| spark.life > 0.0);
+pub fn update_sparks(sparks: &mut Emitter, seconds: f32) {
+    sparks.update(Duration::from_secs_f32(seconds.max(0.0)));
 }
 
 /// Sparks as added light, fading out.
-pub fn draw_sparks(world: &mut Canvas, view: &View, sparks: &[Spark]) {
-    world.set_blend_mode(BlendMode::Add);
-    for spark in sparks {
-        let (x, y) = view.project(spark.position.0, spark.position.1, spark.position.2);
-        let fade = (spark.life * 2.0).min(1.0);
-        world.pixel(
-            x.round() as i32,
-            y.round() as i32,
-            spark.color.with_alpha((255.0 * fade) as u8),
-        );
-    }
-    world.set_blend_mode(BlendMode::Alpha);
+pub fn draw_sparks(world: &mut Canvas, view: &View, sparks: &Emitter) {
+    sparks.draw(world, |[x, y, z]| {
+        let (x, y) = view.project(x, y, z);
+        Some((x.round(), y.round(), 1.0))
+    });
 }
 
 /// A raindrop falling across the screen.

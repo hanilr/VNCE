@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use vnce::vnce_game::{
-    Aabb, Animation, Animator, Camera, Playback, Rng, Scene, SpatialGrid, SpriteSheet, Timer,
-    Transition, ease, move_and_collide,
+    Aabb, Animation, Animator, Camera, Emitter, Playback, Rng, Scene, SpatialGrid, Spread,
+    SpriteSheet, Timer, Transition, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Font, PixelRect, Rgba};
 use vnce::vnce_runtime::Context;
@@ -54,16 +54,6 @@ struct Core {
     taken: bool,
 }
 
-#[derive(Clone, Copy)]
-struct Spark {
-    x: f32,
-    y: f32,
-    vx: f32,
-    vy: f32,
-    life: f32,
-    color: Rgba,
-}
-
 /// The sound lab: repeat the notes the pads play.
 struct Puzzle {
     sequence: [usize; SEQUENCE],
@@ -107,7 +97,8 @@ pub struct Play {
     drones: Vec<Drone>,
     cores: Vec<Core>,
     carried: u32,
-    sparks: Vec<Spark>,
+    /// Sparks bursting from cores and pads, in world pixels.
+    sparks: Emitter,
     camera: Camera,
     rng: Rng,
     time: f32,
@@ -191,7 +182,11 @@ impl Play {
             drones,
             cores,
             carried: 0,
-            sparks: Vec::new(),
+            sparks: Emitter::new()
+                .spread(Spread::Circle)
+                .speed(20.0, 70.0)
+                .life(0.4, 0.9)
+                .drag(4.8),
             camera,
             rng,
             time: 0.0,
@@ -227,18 +222,8 @@ impl Play {
     }
 
     fn burst(&mut self, (x, y): (f32, f32), color: Rgba, count: usize) {
-        for _ in 0..count {
-            let angle = self.rng.unit() * std::f32::consts::TAU;
-            let speed = 20.0 + self.rng.unit() * 50.0;
-            self.sparks.push(Spark {
-                x,
-                y,
-                vx: angle.cos() * speed,
-                vy: angle.sin() * speed,
-                life: 0.4 + self.rng.unit() * 0.5,
-                color,
-            });
-        }
+        self.sparks.set_colors([color]);
+        self.sparks.burst(&mut self.rng, [x, y, 0.0], count);
     }
 
     fn reveal(&mut self, room: Room) {
@@ -567,14 +552,7 @@ impl Scene<Shared> for Play {
         }
 
         // Sparks.
-        for spark in &mut self.sparks {
-            spark.x += spark.vx * seconds;
-            spark.y += spark.vy * seconds;
-            spark.vx *= 0.92;
-            spark.vy *= 0.92;
-            spark.life -= seconds;
-        }
-        self.sparks.retain(|s| s.life > 0.0);
+        self.sparks.update(dt);
         self.camera.update(dt, Some(center));
         Transition::None
     }
@@ -826,13 +804,10 @@ impl Play {
             let (x, y) = screen(drone.body.x + 2.0, drone.body.y + 2.0);
             world.fill_rect(x, y, 2, 1, Rgba::rgb(255, 70, 80));
         }
-        world.set_blend_mode(BlendMode::Add);
-        for spark in &self.sparks {
-            let (x, y) = screen(spark.x, spark.y);
-            let fade = (spark.life * 2.0).min(1.0);
-            world.fill_rect(x, y, 1, 1, spark.color.with_alpha((fade * 255.0) as u8));
-        }
-        world.set_blend_mode(BlendMode::Alpha);
+        self.sparks.draw(world, |[x, y, _]| {
+            let (x, y) = screen(x, y);
+            Some((x as f32, y as f32, 1.0))
+        });
 
         self.draw_hud(shared, info);
     }

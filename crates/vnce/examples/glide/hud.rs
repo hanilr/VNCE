@@ -4,10 +4,11 @@
 
 use std::f32::consts::{PI, TAU};
 
+use vnce::vnce_game::Emitter;
 use vnce::vnce_raster::{BlendMode, Canvas, Rgba};
 
 use crate::flight::angle_between;
-use crate::math::{Camera, Vec3, add_scaled, sub};
+use crate::math::{Camera, Vec3, sub};
 
 /// Size of the instruments in picture pixels per "unit", so they look alike at every
 /// resolution.
@@ -15,24 +16,13 @@ pub fn unit(canvas: &Canvas) -> f32 {
     (canvas.height() as f32 / 140.0).max(1.0)
 }
 
-/// A spark or a bit of debris.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Spark {
-    pub position: Vec3,
-    pub velocity: Vec3,
-    /// Seconds left.
-    pub life: f32,
-    pub color: Rgba,
-}
-
-impl Spark {
-    pub fn update(&mut self, dt: f32) {
-        self.velocity[1] -= 9.81 * 0.6 * dt;
-        let drag = 1.0 - (1.2 * dt).min(1.0);
-        self.velocity = self.velocity.map(|v| v * drag);
-        self.position = add_scaled(self.position, self.velocity, dt);
-        self.life -= dt;
-    }
+/// Sparks and bits of debris: they fall, slow down and fade out over their last second
+/// (spawned by hand with `Emitter::spawn`, with their seconds of life).
+pub fn spark_emitter() -> Emitter {
+    Emitter::new()
+        .gravity([0.0, -9.81 * 0.6, 0.0])
+        .drag(1.2)
+        .fade(1.0)
 }
 
 /// The exhaust trail: points from old to new with their age in seconds, fading out.
@@ -60,23 +50,12 @@ pub fn trail(canvas: &mut Canvas, camera: &Camera, points: &[(Vec3, f32)], max_a
     }
 }
 
-pub fn sparks(canvas: &mut Canvas, camera: &Camera, sparks: &[Spark]) {
+pub fn sparks(canvas: &mut Canvas, camera: &Camera, sparks: &Emitter) {
     let (w, h) = (canvas.width() as f32, canvas.height() as f32);
-    canvas.set_blend_mode(BlendMode::Add);
-    for spark in sparks {
-        if let Some((x, y, depth)) = camera.project(spark.position, w, h) {
-            let alpha = (spark.life.clamp(0.0, 1.0) * 255.0) as u8;
-            let size = (40.0 / depth).clamp(1.0, 3.0) as u32;
-            canvas.fill_rect(
-                x as i32,
-                y as i32,
-                size,
-                size,
-                spark.color.with_alpha(alpha),
-            );
-        }
-    }
-    canvas.set_blend_mode(BlendMode::Alpha);
+    sparks.draw(canvas, |position| {
+        let (x, y, depth) = camera.project(position, w, h)?;
+        Some((x, y, (40.0 / depth).clamp(1.0, 3.0)))
+    });
 }
 
 /// Streaks rushing past the edges of the picture when the craft is fast (`amount` 0..1).
@@ -308,6 +287,7 @@ pub fn flash(canvas: &mut Canvas, strength: f32, color: Rgba) {
 mod tests {
     use super::*;
     use crate::math::direction;
+    use vnce::vnce_game::Particle;
 
     #[test]
     fn instruments_draw_inside_the_picture() {
@@ -337,14 +317,15 @@ mod tests {
             &[([1.0, 49.0, -20.0], 0.5), ([1.0, 49.0, -30.0], 0.2)],
             1.0,
         );
-        let mut spark = Spark {
-            position: [0.0, 50.0, -20.0],
-            velocity: [1.0, 2.0, 0.0],
-            life: 1.0,
-            color: Rgba::rgb(255, 160, 60),
-        };
-        spark.update(0.1);
-        sparks(&mut canvas, &camera, &[spark]);
+        let mut emitter = spark_emitter();
+        emitter.spawn(Particle::new(
+            [0.0, 50.0, -20.0],
+            [1.0, 2.0, 0.0],
+            1.0,
+            Rgba::rgb(255, 160, 60),
+        ));
+        emitter.update(std::time::Duration::from_millis(100));
+        sparks(&mut canvas, &camera, &emitter);
         flash(&mut canvas, 0.5, Rgba::WHITE);
         let changed = canvas
             .pixels()

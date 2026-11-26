@@ -3,9 +3,10 @@
 //! picture.
 
 use std::collections::{HashMap, VecDeque};
+use std::time::Duration;
 
 use vnce::vnce_core::{Color, Rect, Style};
-use vnce::vnce_game::{Rng, Scene, Transition};
+use vnce::vnce_game::{Emitter, Particle, Rng, Scene, Transition};
 use vnce::vnce_raster::{Canvas, Rgba};
 use vnce::vnce_runtime::Context;
 use vnce::vnce_term::Frame;
@@ -15,7 +16,7 @@ use vnce::vnce_ui::{Block, BorderType, Clear, Gauge, Line, Paragraph, Widget};
 use crate::audio::{Mood, Sfx};
 use crate::course::{self, Course, Layout, RING_RADIUS, Ring, start_point};
 use crate::flight::{self, Craft, MAX_SPEED, MIN_SPEED, Stick};
-use crate::hud::{self, Spark};
+use crate::hud;
 use crate::math::{
     Camera, Mat4, Vec3, add, add_scaled, cross, direction, dot, flat_distance, lerp, normalize,
     scale, sub,
@@ -116,7 +117,7 @@ pub struct Play {
     /// The title screen's backdrop: no instruments, no end, no sound effects.
     demo: bool,
     trail: VecDeque<(Vec3, f32)>,
-    sparks: Vec<Spark>,
+    sparks: Emitter,
     flash: (f32, Rgba),
     message: Option<(String, f32, Color)>,
     props: HashMap<ChunkKey, Vec<Prop>>,
@@ -176,7 +177,7 @@ impl Play {
             autopilot: false,
             demo: false,
             trail: VecDeque::new(),
-            sparks: Vec::new(),
+            sparks: hud::spark_emitter(),
             flash: (0.0, Rgba::WHITE),
             message: None,
             props: HashMap::new(),
@@ -276,12 +277,12 @@ impl Play {
                 self.rng.unit() - 0.5,
             ]);
             let color = colors[self.rng.below(colors.len() as u32) as usize];
-            self.sparks.push(Spark {
-                position: center,
-                velocity: scale(dir, speed * (0.4 + self.rng.unit())),
-                life: 0.6 + self.rng.unit() * 0.8,
+            self.sparks.spawn(Particle::new(
+                center,
+                scale(dir, speed * (0.4 + self.rng.unit())),
+                0.6 + self.rng.unit() * 0.8,
                 color,
-            });
+            ));
         }
     }
 
@@ -365,12 +366,12 @@ impl Play {
                 ),
             );
             let out = normalize(sub(point, ring.center));
-            self.sparks.push(Spark {
-                position: point,
-                velocity: add(scale(out, 6.0), scale(ring.normal, 8.0)),
-                life: 0.9,
+            self.sparks.spawn(Particle::new(
+                point,
+                add(scale(out, 6.0), scale(ring.normal, 8.0)),
+                0.9,
                 color,
-            });
+            ));
         }
         match (self.mode, ring.kind) {
             (Mode::Course, RingKind::Finish) => {
@@ -449,10 +450,7 @@ impl Play {
 
     /// Sparks, the flash, the message and the trail age.
     fn update_effects(&mut self, dt: f32) {
-        for spark in &mut self.sparks {
-            spark.update(dt);
-        }
-        self.sparks.retain(|s| s.life > 0.0);
+        self.sparks.update(Duration::from_secs_f32(dt.max(0.0)));
         self.flash.0 = (self.flash.0 - dt * 2.5).max(0.0);
         if let Some((_, left, _)) = &mut self.message {
             *left -= dt;

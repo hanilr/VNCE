@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{
-    Aabb, Animation, Animator, Camera, Playback, Rng, Scene, SpatialGrid, SpriteSheet, Transition,
-    Tween, ease, move_and_collide,
+    Aabb, Animation, Animator, Camera, Emitter, Playback, Rng, Scene, SpatialGrid, SpriteSheet,
+    Transition, Tween, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Font, PixelRect, Rgba};
 use vnce::vnce_runtime::Context;
@@ -25,7 +25,7 @@ use crate::iso::{
 use crate::life::{self, Crab, Wisp};
 use crate::minimap::{self, Minimap};
 use crate::scenes::{End, Pause, Title};
-use crate::sky::{self, Clouds, Fireflies, Lights, NIGHT, Spark, Weather};
+use crate::sky::{self, Clouds, Fireflies, Lights, NIGHT, Weather};
 use crate::visuals::{OCEAN_HEIGHT, OCEAN_WIDTH};
 use crate::{ACCENT, Action, Request, Shared, ZOOM_ROWS, help_line, show, status_line, view};
 
@@ -150,7 +150,7 @@ pub struct Play {
     weather: Weather,
     clouds: Clouds,
     fireflies: Fireflies,
-    sparks: Vec<Spark>,
+    sparks: Emitter,
     lights: Lights,
     light: Canvas,
     minimap: Minimap,
@@ -231,7 +231,7 @@ impl Play {
             weather: Weather::new(),
             clouds: Clouds::new(&mut rng),
             fireflies: Fireflies::new(&island, &mut rng),
-            sparks: Vec::new(),
+            sparks: sky::sparks(),
             lights: Lights::new(),
             light: Canvas::new(0, 0),
             minimap: Minimap::new(),

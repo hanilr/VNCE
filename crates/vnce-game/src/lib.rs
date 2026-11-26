@@ -11,6 +11,7 @@
 //! - [`Scene`] and [`SceneStack`]: title, game, pause and game-over screens.
 //! - [`Timer`] and [`ease`]: cooldowns, repeating events and easing curves.
 //! - [`Tween`] and [`Lerp`]: values that run smoothly from a start to an end over time.
+//! - [`Emitter`]: particles (sparks, debris, smoke, rain) for 2D, isometric and 3D views.
 //! - [`Rng`]: seeded random numbers for level generation and gameplay.
 //! - [`SaveFile`]: best scores, settings and key bindings kept between runs.
 //!
@@ -23,6 +24,7 @@
 pub mod actions;
 pub mod camera;
 pub mod collision;
+pub mod particles;
 pub mod random;
 pub mod save;
 pub mod scene;
@@ -34,6 +36,7 @@ pub mod tween;
 pub use actions::{ActionMap, Binding, ParseBindingError};
 pub use camera::Camera;
 pub use collision::{Aabb, Movement, Sides, SpatialGrid, move_and_collide};
+pub use particles::{Emitter, Particle, Spread};
 pub use random::Rng;
 pub use save::{SaveFile, data_dir};
 pub use scene::{Scene, SceneStack, Transition};
