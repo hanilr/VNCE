@@ -122,6 +122,11 @@ assert_eq!(controls.bindings(Action::Left).count(), 2);
 
 Letters in an `ActionMap` match both cases, so Caps Lock does not break the controls.
 
+In a native window (see [Shipping a game](../SHIPPING-GAMES.md)) gamepads work too: bind
+`GamepadButton::South` or a stick direction (`Binding::stick(GamepadAxis::LeftX, false)`)
+to the same actions, and `axis` becomes smooth with a stick. In a terminal those
+bindings never fire, so they do no harm.
+
 ## Events
 
 For things that should happen exactly once per key press, independent of updates (typing

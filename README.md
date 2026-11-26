@@ -63,8 +63,10 @@ work too.
 
 To release a game, enable the `window` feature: `vnce::run` then opens the same game in its
 own native window (`winit` and `wgpu`), with cells drawn on the GPU from the bundled
-JetBrains Mono font, images in real pixels, GPU pictures shown without a readback, and
-F11 / Alt+Enter for fullscreen; `--terminal` keeps the terminal. See
+JetBrains Mono font, images in real pixels, GPU pictures shown without a readback,
+gamepads (with rumble), F11 / Alt+Enter for fullscreen and window settings the game can
+change (fullscreen, vsync, cursor, sharp or smooth scaling); `--terminal` keeps the
+terminal. See
 [`docs/SHIPPING-GAMES.md`](docs/SHIPPING-GAMES.md).
 
 For interfaces, `vnce_ui` (feature `ui`, on by default) has a small set of widgets: `Layout`,

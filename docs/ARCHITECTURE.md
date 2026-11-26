@@ -194,6 +194,16 @@ loop from vnce's own game loop, so timing and fixed updates stay as in a termina
   and italic); block elements, quadrants, sextants, octants, braille and box drawing are
   drawn by code (`vnce_raster::block_pattern`), so pixel modes and borders line up.
 - `vnce::run` (feature `window`) chooses the window, `--terminal` the terminal.
+- Pictures keep their last uploaded pixels; only bands of changed rows are uploaded
+  (rows up to 8 apart together). A nearest sampler next to the linear one gives sharp
+  scaling (`WindowRequest::SmoothScaling`).
+- Gamepads (feature `gamepad`, on by default): `gilrs` is read after every wait for
+  events and turned into `Event::Gamepad` in a standard layout (`GamepadButton` by
+  position, `GamepadAxis` with y up); pads already connected are announced at start.
+  Rumble is a `gilrs` force feedback effect kept alive for its duration.
+- Window control: `Context` queues `WindowRequest`s (fullscreen, cursor, title, vsync,
+  scaling, rumble); the loop hands them to `Backend::window` before the next frame and
+  reads `Backend::window_state` after it. Terminals ignore both (default methods).
 
 ### Quality
 
@@ -266,6 +276,10 @@ A game loop with a fixed timestep, frame pacing and input dispatch:
   frame and cannot trigger extra frames.
 - Frame time is clamped to avoid the spiral of death; `render` gets an interpolation
   factor (`alpha`).
+- `InputState` also tracks gamepads: held / pressed / released buttons per pad or on any
+  pad, axes with a 0.15 dead zone (rescaled to the full range) and stick directions past
+  half a push as buttons, so `ActionMap` binds them like keys. Gamepads keep working when
+  the window loses focus. `Event` and `Binding` are `#[non_exhaustive]`.
 - `InputState` tracks held keys. Terminals that report key releases (Windows, or the
   kitty keyboard protocol) give exact releases; elsewhere a timeout is used.
 - A `Driver` trait (clock + events) makes runs deterministic in tests (`ScriptedDriver`).
@@ -346,7 +360,7 @@ an `FpsOverlay` for debugging.
 18. **Phase 18:** The native window `vnce-window` — see
    [`plans/2026-11-25-phase-18-window-backend.md`](plans/2026-11-25-phase-18-window-backend.md).
 19. **Phase 19:** Game toolkit: paths, particles, easing, math and more widgets — see [`plans/2026-11-25-phase-19-game-toolkit.md`](plans/2026-11-25-phase-19-game-toolkit.md).
-20. **Phase 20 (planned):** Gamepads and a more complete window — see
+20. **Phase 20:** Gamepads and a more complete window — see
    [`plans/2026-11-25-phase-20-gamepads-and-window.md`](plans/2026-11-25-phase-20-gamepads-and-window.md).
 21. **Phase 21 (planned):** Documentation, publishing and a wiki front page — see
    [`plans/2026-11-25-phase-21-docs-and-publishing.md`](plans/2026-11-25-phase-21-docs-and-publishing.md).

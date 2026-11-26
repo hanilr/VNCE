@@ -55,19 +55,64 @@ cargo build --release --features window
   silicon and Intel.
 - **Linux:** ship the binary in a tarball or an AppImage. The window works on X11 and
   Wayland; the system needs `libxkbcommon` and the usual graphics drivers (Vulkan or
-  OpenGL).
+  OpenGL). Building needs the udev development files for the gamepads (`libudev-dev` on
+  Debian / Ubuntu, `systemd-devel` on Fedora); a game without gamepads can turn them off
+  with `vnce-window`'s `gamepad` feature.
 
 The GPU drivers are found at run time (Vulkan, DX12, Metal or OpenGL); without a GPU,
 games with a CPU renderer still run.
 
-## 4. Save files and settings
+## 4. Controllers and window settings
+
+In a window, gamepads work out of the box (`gilrs`: XInput and Windows.Gaming.Input on
+Windows, evdev on Linux, macOS game controllers). They arrive as `Event::Gamepad`, and
+`ActionMap` binds their buttons and stick directions like keys:
+
+```rust
+use vnce::vnce_game::{ActionMap, Binding};
+use vnce::vnce_term::{GamepadAxis, GamepadButton, KeyCode};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Left,
+    Right,
+    Jump,
+}
+
+let controls = ActionMap::new()
+    .bind(Action::Left, KeyCode::Left)
+    .bind(Action::Left, GamepadButton::DPadLeft)
+    .bind(Action::Left, Binding::stick(GamepadAxis::LeftX, false))
+    .bind(Action::Right, KeyCode::Right)
+    .bind(Action::Right, GamepadButton::DPadRight)
+    .bind(Action::Right, Binding::stick(GamepadAxis::LeftX, true))
+    .bind(Action::Jump, ' ')
+    .bind(Action::Jump, GamepadButton::South);
+// `controls.axis(Action::Left, Action::Right, ctx.input())` is smooth with a stick.
+assert_eq!(controls.bindings(Action::Jump).count(), 2);
+```
+
+- Buttons are named by position (`South` is A on Xbox pads and Cross on Sony pads); show
+  the player names that fit, or both.
+- A controls screen should rebind with `ActionMap::rebind_device` (keys and pad buttons
+  separately) and load saved controls with `replace_bindings`, so an old save file keeps
+  the default pad buttons. The examples' controls screens take a key or a pad button.
+- `ctx.rumble(strength, duration)` rumbles the pads that can.
+
+Settings screens can offer the window's switches: `ctx.set_fullscreen`,
+`ctx.set_vsync`, `ctx.set_cursor_visible` (hide it while playing with a pad or the keys),
+`ctx.set_smooth_scaling` and `ctx.set_title`; `ctx.window_state()` says what the window
+does (`None` in a terminal, where these requests are ignored). Save fullscreen and vsync
+and restore them at start, as Isle and Glide do.
+
+## 5. Save files and settings
 
 `SaveFile::open("game")` stores settings and progress in the user's data folder
 (`%APPDATA%\game`, `~/Library/Application Support/game`, `~/.local/share/game`). Store
 the display method under a key of its own for the window (see the examples'
 `display_key`), so a terminal's choice does not carry over to the window.
 
-## 5. Licenses
+## 6. Licenses
 
 For the engine itself, a credit that players can see is enough: say that the game was
 made with VNCE (for example "Made with VNCE" in the credits, on the title screen, on the
@@ -79,9 +124,10 @@ A game built with the `window` feature also contains the JetBrains Mono font: in
 `crates/vnce-window/fonts/OFL.txt` (SIL Open Font License 1.1). The font may be shipped
 and sold with the game; it may not be sold on its own.
 
-## 6. Check before releasing
+## 7. Check before releasing
 
-- Run the game in a window at several sizes and in fullscreen, on each platform.
+- Run the game in a window at several sizes and in fullscreen, on each platform, with
+  the keyboard and with a controller.
 - `VNCE_WINDOW_SCREENSHOT=shot.png` saves a frame (frame 30, or
   `VNCE_WINDOW_SCREENSHOT_FRAME`) for store pages.
 - The examples show the patterns: `cargo run --release --example glide --features

@@ -1,9 +1,9 @@
 # Plan: Phase 20 — Gamepads and a more complete window
 
 **Date:** 2026-11-25
-**Status:** In progress (proposed after a review of what the library still lacks; the
+**Status:** Done (proposed after a review of what the library still lacks; the
 user asked for the plan on 2026-11-25 and approved the detailed plan below, `gilrs`, the
-CI change and `#[non_exhaustive]` on 2026-11-26, asking for the whole phase)
+CI change and `#[non_exhaustive]` on 2026-11-26, asking for the whole phase; finished the same day)
 
 ## Goal
 

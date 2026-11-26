@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Gamepads: `Event::Gamepad` with `GamepadEvent` (connected, disconnected, buttons,
+  axes) in a standard layout (`GamepadButton`, `GamepadAxis`); `InputState` tracks pads,
+  buttons, axes with a dead zone (`DEAD_ZONE`) and stick directions (`STICK_PRESS`);
+  `Binding::Button` and `Binding::Stick` bind them to actions (saved as `pad:South`,
+  `pad:LeftX-`), `ActionMap::value` and a smooth `axis` for sticks,
+  `ActionMap::rebind_device` and `replace_bindings` to change keys and pad buttons
+  separately.
+- `vnce-window` reads gamepads with `gilrs` (feature `gamepad`, on by default; Linux
+  builds need `libudev-dev`) and rumbles them.
+- Window control from the game: `Context::set_fullscreen`, `set_cursor_visible`,
+  `set_title`, `set_vsync`, `set_smooth_scaling`, `rumble`, `request_window`,
+  `window_state` and `is_windowed`, through `Backend::window` and
+  `Backend::window_state` (`WindowRequest`, `WindowState`); terminals ignore them.
+- The window uploads only the rows of a picture that changed, and scales pictures sharp
+  or smooth.
+- The examples are playable with a controller; their controls screens take pad buttons.
+  Isle and Glide have fullscreen and vsync settings, Glide hides the cursor while flying
+  and rumbles on crashes and rings.
+
+### Changed
+
+- **Breaking:** `Event` and `Binding` are `#[non_exhaustive]` and have new variants
+  (`Event::Gamepad`, `Binding::Button`, `Binding::Stick`): a `match` on them needs a `_`
+  arm. `Backend` has two new methods with default implementations.
+- `ActionMap::axis` returns values between `-1.0` and `1.0` for sticks (keys still give
+  whole steps).
+
 ## [0.2.0] - 2026-11-26
 
 ### Added
