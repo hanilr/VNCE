@@ -46,7 +46,7 @@ mod run;
 pub use config::{ConfigError, FpsLimit, MAX_RATE, RunConfig};
 pub use context::Context;
 pub use driver::{Driver, ScriptedDriver, TerminalDriver};
-pub use input::InputState;
+pub use input::{DEAD_ZONE, Gamepad, InputState, STICK_PRESS};
 pub use run::{RunError, run, run_with};
 
 use vnce_term::{Event, Frame};

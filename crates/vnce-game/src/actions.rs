@@ -1,19 +1,54 @@
-//! Key bindings: [`ActionMap`] maps keys and mouse buttons to game actions.
+//! Key bindings: [`ActionMap`] maps keys, mouse buttons and gamepad buttons and sticks to
+//! game actions.
 
 use std::fmt;
 use std::str::FromStr;
 
 use vnce_runtime::InputState;
-use vnce_term::KeyCode;
 use vnce_term::input::MouseButton;
+use vnce_term::{GamepadAxis, GamepadButton, KeyCode};
 
-/// A key or mouse button bound to an action.
+/// A key, mouse button, gamepad button or stick direction bound to an action.
+///
+/// New kinds of bindings may be added in later versions, so a `match` needs a `_` arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Binding {
     /// A key. Letters match both cases.
     Key(KeyCode),
     /// A mouse button.
     Mouse(MouseButton),
+    /// A gamepad button (on any pad).
+    Button(GamepadButton),
+    /// A stick or trigger pushed past
+    /// [`STICK_PRESS`](vnce_runtime::STICK_PRESS) in one direction (on any pad).
+    Stick {
+        /// The axis.
+        axis: GamepadAxis,
+        /// `true` for right / up / pulled, `false` for left / down.
+        positive: bool,
+    },
+}
+
+impl Binding {
+    /// A stick direction: `Binding::stick(GamepadAxis::LeftX, false)` is the left stick
+    /// pushed left.
+    #[must_use]
+    pub fn stick(axis: GamepadAxis, positive: bool) -> Self {
+        Self::Stick { axis, positive }
+    }
+
+    /// Returns `true` for gamepad buttons and sticks.
+    #[must_use]
+    pub fn is_gamepad(&self) -> bool {
+        matches!(self, Self::Button(_) | Self::Stick { .. })
+    }
+}
+
+impl From<GamepadButton> for Binding {
+    fn from(button: GamepadButton) -> Self {
+        Self::Button(button)
+    }
 }
 
 impl From<KeyCode> for Binding {
@@ -36,13 +71,19 @@ impl From<MouseButton> for Binding {
 
 impl fmt::Display for Binding {
     /// The key name (see [`KeyCode`]'s `Display`) or `mouse:left`, `mouse:right`,
-    /// `mouse:middle`. [`FromStr`] reads it back, for example from a save file.
+    /// `mouse:middle`, a gamepad button as `pad:South` and a stick direction as
+    /// `pad:LeftX-` or `pad:LeftY+`. [`FromStr`] reads it back, for example from a save
+    /// file.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Key(key) => write!(f, "{key}"),
             Self::Mouse(MouseButton::Left) => f.write_str("mouse:left"),
             Self::Mouse(MouseButton::Right) => f.write_str("mouse:right"),
             Self::Mouse(MouseButton::Middle) => f.write_str("mouse:middle"),
+            Self::Button(button) => write!(f, "pad:{button}"),
+            Self::Stick { axis, positive } => {
+                write!(f, "pad:{axis}{}", if *positive { '+' } else { '-' })
+            }
         }
     }
 }
@@ -53,7 +94,7 @@ pub struct ParseBindingError(String);
 
 impl fmt::Display for ParseBindingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unknown key or mouse button {:?}", self.0)
+        write!(f, "unknown key, mouse button or gamepad input {:?}", self.0)
     }
 }
 
@@ -62,10 +103,27 @@ impl std::error::Error for ParseBindingError {}
 impl FromStr for Binding {
     type Err = ParseBindingError;
 
-    /// Parses a name written by `Display` (`w`, `Space`, `Esc`, `mouse:left`, ...).
+    /// Parses a name written by `Display` (`w`, `Space`, `Esc`, `mouse:left`,
+    /// `pad:South`, `pad:LeftX-`, ...).
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let error = || ParseBindingError(s.to_owned());
         let lower = s.to_ascii_lowercase();
+        if lower.starts_with("pad:") {
+            let name = &s.trim()[4..];
+            if let Some(axis) = name.strip_suffix('+') {
+                return axis
+                    .parse()
+                    .map(|a| Self::stick(a, true))
+                    .map_err(|_| error());
+            }
+            if let Some(axis) = name.strip_suffix('-') {
+                return axis
+                    .parse()
+                    .map(|a| Self::stick(a, false))
+                    .map_err(|_| error());
+            }
+            return name.parse().map(Self::Button).map_err(|_| error());
+        }
         if let Some(button) = lower.strip_prefix("mouse:") {
             return match button {
                 "left" => Ok(Self::Mouse(MouseButton::Left)),
@@ -166,6 +224,8 @@ impl<A: Copy + PartialEq> ActionMap<A> {
         self.bindings(action).any(|binding| match binding {
             Binding::Key(key) => input.is_down(key),
             Binding::Mouse(button) => input.is_mouse_down(button),
+            Binding::Button(button) => input.is_button_down(button),
+            Binding::Stick { axis, positive } => input.is_stick_down(axis, positive),
         })
     }
 
@@ -175,6 +235,8 @@ impl<A: Copy + PartialEq> ActionMap<A> {
         self.bindings(action).any(|binding| match binding {
             Binding::Key(key) => input.was_pressed(key),
             Binding::Mouse(button) => input.was_mouse_pressed(button),
+            Binding::Button(button) => input.was_button_pressed(button),
+            Binding::Stick { axis, positive } => input.was_stick_pressed(axis, positive),
         })
     }
 
@@ -184,18 +246,34 @@ impl<A: Copy + PartialEq> ActionMap<A> {
         self.bindings(action).any(|binding| match binding {
             Binding::Key(key) => input.was_released(key),
             Binding::Mouse(button) => input.was_mouse_released(button),
+            Binding::Button(button) => input.was_button_released(button),
+            Binding::Stick { axis, positive } => input.was_stick_released(axis, positive),
         })
     }
 
-    /// `-1.0` while only `negative` is held, `1.0` while only `positive` is held, `0.0`
-    /// otherwise. For movement: `x += speed * axis(Left, Right)`.
+    /// How strongly `action` is held, from `0.0` to `1.0`: `1.0` for a held key or button,
+    /// the stick's push (after the dead zone) for stick bindings, the strongest of them.
+    #[must_use]
+    pub fn value(&self, action: A, input: &InputState) -> f32 {
+        self.bindings(action)
+            .map(|binding| match binding {
+                Binding::Key(key) => f32::from(u8::from(input.is_down(key))),
+                Binding::Mouse(button) => f32::from(u8::from(input.is_mouse_down(button))),
+                Binding::Button(button) => f32::from(u8::from(input.is_button_down(button))),
+                Binding::Stick { axis, positive } => {
+                    let v = input.axis(axis);
+                    if positive { v.max(0.0) } else { (-v).max(0.0) }
+                }
+            })
+            .fold(0.0, f32::max)
+    }
+
+    /// From `-1.0` (only `negative` held) to `1.0` (only `positive` held); `0.0` when
+    /// neither or both are held. Keys give whole steps, sticks everything in between. For
+    /// movement: `x += speed * axis(Left, Right)`.
     #[must_use]
     pub fn axis(&self, negative: A, positive: A, input: &InputState) -> f32 {
-        match (self.is_down(negative, input), self.is_down(positive, input)) {
-            (true, false) => -1.0,
-            (false, true) => 1.0,
-            _ => 0.0,
-        }
+        (self.value(positive, input) - self.value(negative, input)).clamp(-1.0, 1.0)
     }
 }
 
@@ -223,6 +301,27 @@ mod tests {
             assert_eq!(name.parse::<Binding>(), Ok(binding), "{name}");
         }
         assert_eq!("Mouse:Left".parse(), Ok(Binding::Mouse(MouseButton::Left)));
+        for binding in [
+            Binding::from(GamepadButton::South),
+            Binding::from(GamepadButton::DPadLeft),
+            Binding::stick(GamepadAxis::LeftX, false),
+            Binding::stick(GamepadAxis::RightTrigger, true),
+        ] {
+            let name = binding.to_string();
+            assert_eq!(name.parse::<Binding>(), Ok(binding), "{name}");
+            assert!(binding.is_gamepad());
+        }
+        assert_eq!(
+            Binding::stick(GamepadAxis::LeftY, true).to_string(),
+            "pad:LeftY+"
+        );
+        assert_eq!(
+            "PAD:south".parse(),
+            Ok(Binding::Button(GamepadButton::South))
+        );
+        assert!("pad:LeftZ+".parse::<Binding>().is_err());
+        assert!("pad:Turbo".parse::<Binding>().is_err());
+        assert!(!Binding::from('w').is_gamepad());
         assert!("mouse:wheel".parse::<Binding>().is_err());
         assert!("nothing".parse::<Binding>().is_err());
     }
@@ -281,6 +380,35 @@ mod tests {
         assert!((controls.axis(Action::Left, Action::Right, &input) - 1.0).abs() < f32::EPSILON);
         press(&mut input, KeyCode::Left);
         assert!((controls.axis(Action::Left, Action::Right, &input)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn gamepad_buttons_and_sticks() {
+        use vnce_term::{GamepadEvent, GamepadEventKind, GamepadId};
+
+        let controls = controls()
+            .bind(Action::Fire, GamepadButton::South)
+            .bind(Action::Left, Binding::stick(GamepadAxis::LeftX, false))
+            .bind(Action::Right, Binding::stick(GamepadAxis::LeftX, true));
+        let mut input = InputState::new(true, Duration::from_millis(500));
+        let pad = |kind| Event::Gamepad(GamepadEvent::new(GamepadId(0), kind));
+        let now = Instant::now();
+        input.handle_event(
+            &pad(GamepadEventKind::ButtonPressed(GamepadButton::South)),
+            now,
+        );
+        assert!(controls.is_down(Action::Fire, &input));
+        // Half a push to the left: a smooth axis, not a whole step.
+        input.handle_event(
+            &pad(GamepadEventKind::AxisChanged(GamepadAxis::LeftX, -0.575)),
+            now,
+        );
+        let x = controls.axis(Action::Left, Action::Right, &input);
+        assert!((x + 0.5).abs() < 1e-4, "{x}");
+        assert!(controls.is_down(Action::Left, &input));
+        // A key still gives a whole step and wins over the stick.
+        press(&mut input, KeyCode::Left);
+        assert!((controls.axis(Action::Left, Action::Right, &input) + 1.0).abs() < 1e-6);
     }
 
     #[test]

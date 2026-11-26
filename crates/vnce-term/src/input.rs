@@ -1,4 +1,4 @@
-//! Keyboard, mouse, resize, focus and paste events.
+//! Keyboard, mouse, resize, focus, paste and gamepad events.
 //!
 //! The event types are defined here so that applications never depend on the underlying
 //! terminal library directly.
@@ -18,8 +18,15 @@ use std::time::{Duration, Instant};
 use crossterm::event as ct;
 use vnce_core::Size;
 
+pub use crate::gamepad::{
+    GamepadAxis, GamepadButton, GamepadEvent, GamepadEventKind, GamepadId, ParseGamepadError,
+};
+
 /// A terminal event.
+///
+/// New kinds of events may be added in later versions, so a `match` needs a `_` arm.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Event {
     /// A key was pressed, repeated or released.
     Key(KeyEvent),
@@ -38,6 +45,9 @@ pub enum Event {
     Paste(String),
     /// The window was asked to close (its close button). Only native windows send it.
     Closed,
+    /// A gamepad was connected or disconnected, or a button or axis changed. Only native
+    /// windows send it (terminals cannot read gamepads).
+    Gamepad(GamepadEvent),
 }
 
 /// A keyboard event.
