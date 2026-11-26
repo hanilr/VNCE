@@ -490,7 +490,11 @@ impl Scene<Shared> for Settings {
                     .unwrap_or(0);
                 ctx.set_graphics_mode(modes[step(current, direction, modes.len())]);
             }
-            4 => shared.smooth = !shared.smooth,
+            4 => {
+                shared.smooth = !shared.smooth;
+                // A window scales the picture with the same choice.
+                ctx.set_smooth_scaling(shared.smooth);
+            }
             5 => {
                 let mut visuals = shared.visuals.borrow_mut();
                 let on = !visuals.using_gpu();

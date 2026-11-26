@@ -192,7 +192,10 @@ impl State {
                     self.surface.configure(&self.device, &self.config);
                 }
             }
-            WindowRequest::SmoothScaling(on) => self.smooth_scaling = *on,
+            WindowRequest::SmoothScaling(on) => {
+                self.smooth_scaling = *on;
+                self.renderer.set_smooth(*on);
+            }
             WindowRequest::Rumble { strength, duration } => {
                 self.pads.rumble(*strength, *duration);
             }

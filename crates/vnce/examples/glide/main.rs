@@ -305,6 +305,7 @@ impl Shared {
         }
         // The window's own settings (a terminal ignores them).
         if ctx.is_windowed() {
+            ctx.set_smooth_scaling(self.smooth);
             if let Some(fullscreen) = self.save.get::<bool>("fullscreen") {
                 ctx.set_fullscreen(fullscreen);
             }

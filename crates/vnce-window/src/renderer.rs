@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use vnce_core::{Buffer, Color, Modifiers, Rect};
 use vnce_gpu::wgpu;
-use vnce_raster::Canvas;
+use vnce_raster::{Canvas, Rgba};
 use vnce_term::{FrameView, ImageView};
 
 use crate::atlas::{ATLAS_SIZE, Atlas, Slot};
@@ -162,6 +162,56 @@ struct Picture {
     texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
     size: (u32, u32),
+    /// The pixels last uploaded, to find the rows that changed.
+    pixels: Vec<Rgba>,
+}
+
+/// Changed rows at most this far apart are uploaded as one band.
+const BAND_GAP: u32 = 8;
+
+/// Uploads `rows` of `canvas` into `texture` (same size), using `bytes` as scratch space.
+fn write_rows(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    bytes: &mut Vec<u8>,
+    canvas: &Canvas,
+    rows: std::ops::Range<u32>,
+) {
+    let width = canvas.width();
+    if width == 0 || rows.is_empty() {
+        return;
+    }
+    let start = rows.start as usize * width as usize;
+    let end = rows.end as usize * width as usize;
+    bytes.clear();
+    bytes.extend(
+        canvas.pixels()[start..end]
+            .iter()
+            .flat_map(|p| [p.r, p.g, p.b, p.a]),
+    );
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: 0,
+                y: rows.start,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytes,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(rows.end - rows.start),
+        },
+        wgpu::Extent3d {
+            width,
+            height: rows.end - rows.start,
+            depth_or_array_layers: 1,
+        },
+    );
 }
 
 /// Draws frames into texture views of one format.
@@ -180,7 +230,12 @@ pub struct Renderer {
     instances: Option<(wgpu::Buffer, usize)>,
     image_rects: Option<(wgpu::Buffer, usize)>,
     pictures: HashMap<Rect, Picture>,
+    /// Smooth (linear) and sharp (nearest) sampling of pictures.
     sampler: wgpu::Sampler,
+    nearest: wgpu::Sampler,
+    smooth: bool,
+    /// Bytes of pictures uploaded so far.
+    uploaded: u64,
     data: Vec<CellInstance>,
     /// Reused for the bytes of uploaded pictures.
     bytes: Vec<u8>,
@@ -315,6 +370,12 @@ impl Renderer {
             min_filter: wgpu::FilterMode::Linear,
             ..wgpu::SamplerDescriptor::default()
         });
+        let nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("vnce_window sharp pictures"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..wgpu::SamplerDescriptor::default()
+        });
         Self {
             cells,
             images,
@@ -330,6 +391,9 @@ impl Renderer {
             image_rects: None,
             pictures: HashMap::new(),
             sampler,
+            nearest,
+            smooth: true,
+            uploaded: 0,
             data: Vec::new(),
             bytes: Vec::new(),
         }
@@ -610,34 +674,57 @@ impl Renderer {
                     texture,
                     bind_group,
                     size,
+                    pixels: Vec::new(),
                 },
             );
         }
-        if fresh || changed {
-            self.bytes.clear();
-            self.bytes
-                .extend(canvas.pixels().iter().flat_map(|p| [p.r, p.g, p.b, p.a]));
-            if let Some(picture) = self.pictures.get(&area) {
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &picture.texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &self.bytes,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(size.0 * 4),
-                        rows_per_image: Some(size.1),
-                    },
-                    wgpu::Extent3d {
-                        width: size.0,
-                        height: size.1,
-                        depth_or_array_layers: 1,
-                    },
-                );
+        let Some(picture) = self.pictures.get_mut(&area) else {
+            return;
+        };
+        if fresh {
+            picture.pixels.clear();
+            picture.pixels.extend_from_slice(canvas.pixels());
+            write_rows(queue, &picture.texture, &mut self.bytes, canvas, 0..size.1);
+            self.uploaded += u64::from(size.0) * u64::from(size.1) * 4;
+            return;
+        }
+        if !changed {
+            return;
+        }
+        // Only the rows that changed since the last upload go to the GPU, in bands (rows
+        // a few apart are sent together, one copy being cheaper than many).
+        let width = size.0 as usize;
+        let rows = canvas.pixels().chunks_exact(width.max(1));
+        let old_rows = picture.pixels.chunks_exact_mut(width.max(1));
+        let mut bands: Vec<std::ops::Range<u32>> = Vec::new();
+        for (y, (row, old)) in (0..).zip(rows.zip(old_rows)) {
+            if row == old {
+                continue;
             }
+            old.copy_from_slice(row);
+            match bands.last_mut() {
+                Some(band) if y - band.end <= BAND_GAP => band.end = y + 1,
+                _ => bands.push(y..y + 1),
+            }
+        }
+        for band in bands {
+            self.uploaded += u64::from(size.0) * u64::from(band.end - band.start) * 4;
+            write_rows(queue, &picture.texture, &mut self.bytes, canvas, band);
+        }
+    }
+
+    /// Bytes of pictures uploaded to the GPU so far (for tests and measurements).
+    #[cfg_attr(not(test), allow(dead_code, reason = "read by the tests"))]
+    pub fn uploaded_bytes(&self) -> u64 {
+        self.uploaded
+    }
+
+    /// Scales pictures smoothly (`true`) or with sharp pixels. Their bind groups are
+    /// made again with the other sampler.
+    pub fn set_smooth(&mut self, smooth: bool) {
+        if self.smooth != smooth {
+            self.smooth = smooth;
+            self.pictures.clear();
         }
     }
 
@@ -652,7 +739,11 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(if self.smooth {
+                        &self.sampler
+                    } else {
+                        &self.nearest
+                    }),
                 },
             ],
         })
@@ -750,7 +841,6 @@ fn pipeline(
 mod tests {
     use vnce_core::{Cell, Size, Style};
     use vnce_gpu::{Gpu, GpuOptions, RenderTarget};
-    use vnce_raster::Rgba;
 
     use super::*;
 
@@ -826,5 +916,67 @@ mod tests {
         };
         renderer.render(gpu.device(), gpu.queue(), target.view(), &frame, layout);
         assert!(renderer.pictures.is_empty());
+    }
+
+    /// Only changed rows are uploaded again, and the result shows them; sharp scaling
+    /// keeps pixels whole. Skipped without any adapter.
+    #[test]
+    fn partial_uploads_and_sharp_scaling() {
+        let Ok(gpu) = Gpu::new(GpuOptions::default()) else {
+            eprintln!("skipped: no GPU adapter");
+            return;
+        };
+        let mut renderer = Renderer::new(gpu.device(), RenderTarget::FORMAT, 16.0);
+        let (cw, ch) = renderer.cell_size();
+        let (_, layout) = renderer.layout((cw * 4, ch * 2));
+        let buffer = Buffer::empty(Size::new(4, 2));
+        let mut target = RenderTarget::new(&gpu, layout.target.0, layout.target.1);
+        let area = Rect::new(0, 0, 4, 2);
+        let mut picture = Canvas::filled(64, 64, Rgba::rgb(0, 0, 255));
+        let mut draw = |renderer: &mut Renderer, picture: &Canvas, changed| {
+            let frame = FrameView {
+                buffer: &buffer,
+                images: vec![ImageView::Pixels {
+                    area,
+                    canvas: picture,
+                    changed,
+                }],
+                full_redraw: true,
+                cell_pixels: (cw as u16, ch as u16),
+            };
+            renderer.render(gpu.device(), gpu.queue(), target.view(), &frame, layout);
+            let mut canvas = Canvas::new(0, 0);
+            target.read_into(&gpu, &mut canvas).unwrap();
+            canvas
+        };
+        draw(&mut renderer, &picture, true);
+        assert_eq!(
+            renderer.uploaded_bytes(),
+            64 * 64 * 4,
+            "the first upload is whole"
+        );
+        // A band of rows changes: only it is sent, and it shows.
+        picture.pixels_mut()[32 * 64..48 * 64].fill(Rgba::rgb(255, 0, 0));
+        let shown = draw(&mut renderer, &picture, true);
+        assert_eq!(renderer.uploaded_bytes(), 64 * 64 * 4 + 64 * 16 * 4);
+        let y = (40.0 / 64.0 * layout.target.1 as f32) as u32;
+        assert_eq!(
+            shown.get(layout.target.0 / 2, y),
+            Some(Rgba::rgb(255, 0, 0))
+        );
+        // Unchanged: nothing is sent.
+        draw(&mut renderer, &picture, true);
+        assert_eq!(renderer.uploaded_bytes(), 64 * 64 * 4 + 64 * 16 * 4);
+
+        // Two pixels stretched over the area: smooth scaling blends them near the middle,
+        // sharp scaling keeps the left one whole up to the middle.
+        let pair =
+            Canvas::from_pixels(2, 1, vec![Rgba::rgb(255, 0, 0), Rgba::rgb(0, 0, 255)]).unwrap();
+        let x = layout.target.0 * 45 / 100;
+        let smooth = draw(&mut renderer, &pair, true).get(x, 2).unwrap();
+        renderer.set_smooth(false);
+        let sharp = draw(&mut renderer, &pair, true).get(x, 2).unwrap();
+        assert_eq!(sharp, Rgba::rgb(255, 0, 0));
+        assert!(smooth.b > 0, "{smooth:?}");
     }
 }
