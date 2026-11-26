@@ -57,9 +57,11 @@ required-features = ["gpu"]
 name = "gpu_cube"
 required-features = ["gpu"]
 
+# The widget tour. Its smoke test runs with `cargo test`.
 [[example]]
 name = "ui"
 required-features = ["ui"]
+test = true
 
 [[example]]
 name = "stars"

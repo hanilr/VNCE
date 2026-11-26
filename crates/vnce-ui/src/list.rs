@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use vnce_core::{Buffer, Rect, Style};
+use vnce_core::{Buffer, Position, Rect, Style};
 
 use crate::block::Block;
 use crate::paragraph::{grapheme_width, truncate};
@@ -41,6 +41,12 @@ impl ListState {
     #[must_use]
     pub fn offset(&self) -> usize {
         self.offset
+    }
+
+    /// Scrolls so that `offset` is the first visible row (drawing still keeps the
+    /// selected row visible).
+    pub fn set_offset(&mut self, offset: usize) {
+        self.offset = offset;
     }
 
     /// Selects the next row of a list with `len` rows; wraps around to the first row when
@@ -166,6 +172,30 @@ impl<'a> List<'a> {
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = Some(block);
         self
+    }
+
+    /// The row under `position` when the list is drawn in `area` with `state` (as last
+    /// drawn), for mouse clicks and hovering.
+    ///
+    /// ```
+    /// use vnce_core::{Buffer, Position, Rect, Size};
+    /// use vnce_ui::{List, ListState, StatefulWidget};
+    ///
+    /// let list = List::new(["New game", "Options", "Quit"]);
+    /// let area = Rect::new(2, 1, 10, 3);
+    /// let mut state = ListState::default();
+    /// list.render(area, &mut Buffer::empty(Size::new(20, 5)), &mut state);
+    /// assert_eq!(list.item_at(area, &state, Position::new(5, 2)), Some(1));
+    /// assert_eq!(list.item_at(area, &state, Position::new(0, 2)), None);
+    /// ```
+    #[must_use]
+    pub fn item_at(&self, area: Rect, state: &ListState, position: Position) -> Option<usize> {
+        let area = self.block.as_ref().map_or(area, |block| block.inner(area));
+        if !area.contains(position) {
+            return None;
+        }
+        let index = state.offset + usize::from(position.y - area.top());
+        (index < self.items.len()).then_some(index)
     }
 }
 
@@ -314,6 +344,25 @@ mod tests {
                 .modifiers
                 .contains(Modifiers::REVERSE)
         );
+    }
+
+    #[test]
+    fn hit_testing_follows_scrolling_and_blocks() {
+        let list = List::new(["a", "b", "c", "d"]).block(Block::bordered());
+        let area = Rect::new(0, 0, 5, 4);
+        let mut state = ListState::with_selected(Some(3));
+        let mut buffer = Buffer::empty(Size::new(5, 4));
+        StatefulWidget::render(&list, area, &mut buffer, &mut state);
+        assert_eq!(state.offset(), 2);
+        assert_eq!(list.item_at(area, &state, Position::new(1, 1)), Some(2));
+        assert_eq!(list.item_at(area, &state, Position::new(1, 2)), Some(3));
+        assert_eq!(
+            list.item_at(area, &state, Position::new(0, 1)),
+            None,
+            "border"
+        );
+        state.set_offset(0);
+        assert_eq!(list.item_at(area, &state, Position::new(1, 1)), Some(0));
     }
 
     #[test]

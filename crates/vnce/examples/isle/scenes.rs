@@ -11,7 +11,8 @@ use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Font, Rgba};
 use vnce::vnce_runtime::{Context, FpsLimit};
 use vnce::vnce_term::{Event, Frame, KeyCode, KeyEventKind};
 use vnce::vnce_ui::{
-    Block, BorderType, Clear, Line, List, ListState, Padding, StatefulWidget, Widget,
+    Block, BorderType, Clear, Line, List, ListState, Padding, Slider, Span, StatefulWidget,
+    TextInputState, Widget,
 };
 
 use crate::audio::{Mood, Sfx};
@@ -262,14 +263,20 @@ impl Scene<Shared> for Title {
 
 /// Typing the code of an island to play it.
 pub struct Code {
-    text: String,
+    /// The code typed so far: capitals of the code's letters, at most its length.
+    input: TextInputState,
     wrong: bool,
 }
 
 impl Code {
     fn new() -> Self {
         Self {
-            text: String::new(),
+            input: TextInputState::new()
+                .max_len(island::CODE_LENGTH)
+                .filter(|c| {
+                    let c = c.to_ascii_uppercase();
+                    island::CODE_LETTERS.contains(c).then_some(c)
+                }),
             wrong: false,
         }
     }
@@ -290,12 +297,8 @@ impl Scene<Shared> for Code {
         }
         match key.code {
             KeyCode::Esc => return Transition::Pop,
-            KeyCode::Backspace => {
-                self.text.pop();
-                self.wrong = false;
-            }
             KeyCode::Enter => {
-                if let Some(seed) = island::parse_code(&self.text) {
+                if let Some(seed) = island::parse_code(self.input.text()) {
                     shared.sounds.play(Sfx::Blip);
                     shared.request = Some(Request::Play(seed));
                     return Transition::Pop;
@@ -303,14 +306,13 @@ impl Scene<Shared> for Code {
                 shared.sounds.play(Sfx::Wrong);
                 self.wrong = true;
             }
-            KeyCode::Char(c) if self.text.len() < island::CODE_LENGTH => {
-                let c = c.to_ascii_uppercase();
-                if island::CODE_LETTERS.contains(c) {
-                    self.text.push(c);
+            _ => {
+                let before = self.input.text().len();
+                self.input.handle_key(key);
+                if self.input.text().len() != before {
                     self.wrong = false;
                 }
             }
-            _ => {}
         }
         Transition::None
     }
@@ -320,7 +322,7 @@ impl Scene<Shared> for Code {
     }
 
     fn render(&mut self, _shared: &Shared, _ctx: &Context, frame: &mut Frame<'_>) {
-        let mut shown = self.text.clone();
+        let mut shown = self.input.text().to_owned();
         while shown.len() < island::CODE_LENGTH {
             shown.push('·');
         }
@@ -501,13 +503,14 @@ impl Scene<Shared> for Settings {
     }
 
     fn render(&mut self, shared: &Shared, ctx: &Context, frame: &mut Frame<'_>) {
-        let bar = |value: u32| {
-            let filled = (value / 10) as usize;
-            format!(
-                "{}{} {value:>3}%",
-                "█".repeat(filled),
-                "·".repeat(10 - filled)
-            )
+        // A volume as a slider row: the name, then `━━━━━━●───  70%`.
+        let volume_row = |name: &'static str, value: u32| {
+            let slider = Slider::new(f64::from(value), 0.0, 100.0)
+                .show_value(true)
+                .to_line(15);
+            let mut spans = vec![Span::raw(name)];
+            spans.extend(slider.spans);
+            Line::from(spans)
         };
         let visuals = shared.visuals.borrow();
         let ocean = if visuals.gpu_available() {
@@ -518,8 +521,8 @@ impl Scene<Shared> for Settings {
         let switch =
             |on: bool, yes: &str, no: &str| if on { yes.to_owned() } else { no.to_owned() };
         let items = vec![
-            Line::from(format!("Music        {}", bar(shared.music_volume))),
-            Line::from(format!("Effects      {}", bar(shared.effects_volume))),
+            volume_row("Music        ", shared.music_volume),
+            volume_row("Effects      ", shared.effects_volume),
             Line::from(match ctx.fps_limit() {
                 FpsLimit::Fixed(rate) => format!("Frames       ◀ {rate} fps ▶"),
                 FpsLimit::Unlimited => "Frames       ◀ unlimited ▶".to_owned(),

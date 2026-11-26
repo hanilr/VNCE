@@ -270,6 +270,28 @@ pub(crate) fn visible_graphemes(text: &str) -> impl Iterator<Item = &str> {
         .filter(|g| !g.chars().any(char::is_control) && g.width() > 0)
 }
 
+/// Writes the visible graphemes of `text` from column `x` of row `y` in `style`, stopping
+/// before column `right`; returns the column after the last one written.
+pub(crate) fn put_str(
+    buffer: &mut vnce_core::Buffer,
+    x: u16,
+    y: u16,
+    right: u16,
+    text: &str,
+    style: Style,
+) -> u16 {
+    let mut x = x;
+    for grapheme in visible_graphemes(text) {
+        let w = crate::paragraph::grapheme_width(grapheme);
+        if x.saturating_add(w) > right {
+            break;
+        }
+        buffer.set_symbol(x, y, grapheme, style);
+        x += w;
+    }
+    x
+}
+
 #[cfg(test)]
 mod tests {
     use vnce_core::Color;

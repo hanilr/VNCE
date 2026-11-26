@@ -1,6 +1,6 @@
 [package]
 name = "vnce-ui"
-description = "A small set of terminal widgets (layout, text, blocks, gauges, lists) for the Variation CLI Engine."
+description = "A small set of terminal widgets (layout, text, blocks, gauges, lists, tables, tabs, text fields, sliders) for the Variation CLI Engine."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,3 +22,5 @@ workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 vnce-core.workspace = true
+# Key and paste events for `TextInputState::handle_event`.
+vnce-term.workspace = true

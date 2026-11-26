@@ -2207,6 +2207,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "vnce-core",
+ "vnce-term",
 ]
 
 [[package]]
