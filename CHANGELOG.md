@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 ### Added
 
 - `vnce_core::math`: `Vec2` / `Vec3` helpers for arrays of any length (`add`, `sub`,
@@ -325,5 +327,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hides the answers after it; an `ESC` inside a sequence cancels it, as in xterm.
 - The raster robustness tests build without the `png` feature.
 
-[Unreleased]: https://github.com/hanilr/VNCE/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hanilr/VNCE/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hanilr/VNCE/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/hanilr/VNCE/releases/tag/v0.1.0

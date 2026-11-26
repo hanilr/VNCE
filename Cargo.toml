@@ -4,7 +4,7 @@ members = ["crates/*"]
 
 # Settings shared by every crate in the workspace.
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
@@ -22,15 +22,15 @@ pedantic = { level = "warn", priority = -1 }
 # Shared dependency versions; crates opt in with `dep = { workspace = true }`.
 [workspace.dependencies]
 # Internal crates.
-vnce-audio = { path = "crates/vnce-audio", version = "0.1.0" }
-vnce-core = { path = "crates/vnce-core", version = "0.1.0" }
-vnce-game = { path = "crates/vnce-game", version = "0.1.0" }
-vnce-gpu = { path = "crates/vnce-gpu", version = "0.1.0" }
-vnce-raster = { path = "crates/vnce-raster", version = "0.1.0", default-features = false }
-vnce-runtime = { path = "crates/vnce-runtime", version = "0.1.0" }
-vnce-term = { path = "crates/vnce-term", version = "0.1.0" }
-vnce-ui = { path = "crates/vnce-ui", version = "0.1.0" }
-vnce-window = { path = "crates/vnce-window", version = "0.1.0" }
+vnce-audio = { path = "crates/vnce-audio", version = "0.2.0" }
+vnce-core = { path = "crates/vnce-core", version = "0.2.0" }
+vnce-game = { path = "crates/vnce-game", version = "0.2.0" }
+vnce-gpu = { path = "crates/vnce-gpu", version = "0.2.0" }
+vnce-raster = { path = "crates/vnce-raster", version = "0.2.0", default-features = false }
+vnce-runtime = { path = "crates/vnce-runtime", version = "0.2.0" }
+vnce-term = { path = "crates/vnce-term", version = "0.2.0" }
+vnce-ui = { path = "crates/vnce-ui", version = "0.2.0" }
+vnce-window = { path = "crates/vnce-window", version = "0.2.0" }
 
 # External crates.
 bytemuck = { version = "1.25", features = ["derive"] }
