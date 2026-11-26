@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `vnce_core::math`: `Vec2` / `Vec3` helpers for arrays of any length (`add`, `sub`,
   `scale`, `dot`, `length`, `distance`, `normalize`, `lerp`; `cross`, `rotate`,
-  `rotate2`, `direction`), `Mat4` (with `basis`, `heading`, `look_to`, `apply`,
+  `rotate2`, `direction`), `Mat4` (with `basis`, `heading`, `look_to`, `apply`, `point`,
   `transform_direction`) and a perspective `Camera` (`project`, `ray`, `with_lens`), so
   game code and CPU renderers share the GPU's types without the `gpu` feature.
 - `vnce_game::Tween` and `Lerp`: values that run from a start to an end over a time along

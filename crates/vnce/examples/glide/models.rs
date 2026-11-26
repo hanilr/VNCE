@@ -60,7 +60,7 @@ impl Tri {
             self.n
         };
         Self {
-            p: self.p.map(|p| model.transform_point(p)),
+            p: self.p.map(|p| model.point(p)),
             n,
             color: self.color,
         }

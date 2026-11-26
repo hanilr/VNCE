@@ -286,6 +286,14 @@ impl Mat4 {
         [out[0] / w, out[1] / w, out[2] / w]
     }
 
+    /// A point transformed (no perspective division). For affine matrices (moves, turns,
+    /// scales; not projections) it equals [`Mat4::transform_point`] without its division.
+    #[must_use]
+    pub fn point(&self, p: Vec3) -> Vec3 {
+        let [x, y, z, _] = self.apply(p);
+        [x, y, z]
+    }
+
     /// `self * [v, 0]`: a direction, unaffected by translation.
     #[must_use]
     pub fn transform_direction(&self, v: Vec3) -> Vec3 {
@@ -467,6 +475,9 @@ mod tests {
             [2.0, 3.0, 4.0],
         );
         assert_eq!(Mat4::default(), Mat4::IDENTITY);
+        // Affine matrices: `point` skips the division and gives the same point.
+        let m = Mat4::translation([1.0, 2.0, 3.0]) * Mat4::rotation_y(0.7);
+        assert_eq!(m.point([4.0, 5.0, 6.0]), m.transform_point([4.0, 5.0, 6.0]));
         // Directions ignore the translation.
         assert_near(
             Mat4::translation([5.0, 5.0, 5.0]).transform_direction([0.0, 1.0, 0.0]),

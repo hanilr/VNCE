@@ -569,7 +569,7 @@ impl Play {
                 crate::math::camera(eye, sub(look, eye), up, aspect)
             }
             CameraKind::Cockpit => crate::math::camera(
-                craft.model().transform_point([0.0, 0.85, -1.4]),
+                craft.model().point([0.0, 0.85, -1.4]),
                 craft.forward(),
                 craft.up(),
                 aspect,

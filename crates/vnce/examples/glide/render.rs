@@ -564,7 +564,7 @@ impl Projector {
         if fogged >= 0.99 {
             return;
         }
-        let v = tri.p.map(|p| self.view.transform_point(p));
+        let v = tri.p.map(|p| self.view.point(p));
         // Clip against the near plane: keep the part in front (z < -NEAR).
         let limit = -NEAR;
         let inside = v.map(|p| p[2] < limit);
