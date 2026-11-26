@@ -1,0 +1,14 @@
+[package]
+name = "gen-logo"
+description = "Generates the VNCE logo (SVG and PNG sizes): a horse's face that turns from pixels into a smooth drawing."
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+# Not a member of the main workspace: this is a development tool.
+[workspace]
+
+[dependencies]
+# Only for PNG encoding.
+vnce-raster = { path = "../../crates/vnce-raster" }
