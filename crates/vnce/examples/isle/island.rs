@@ -2,9 +2,9 @@
 //! crystals and the beacon; the walking rules and A* path finding on its tiles.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
 
-use vnce::vnce_game::Rng;
+use vnce::vnce_game::{Pathfinder, Rng};
 
 /// Tiles per side, with a ring of open sea around the land.
 pub const SIZE: usize = 40;
@@ -494,43 +494,9 @@ impl Island {
         if !self.is_walkable(to) {
             return None;
         }
-        let estimate = |t: (usize, usize)| (t.0.abs_diff(to.0) + t.1.abs_diff(to.1)) as u32;
-        let mut cost = vec![u32::MAX; SIZE * SIZE];
-        let mut came = vec![usize::MAX; SIZE * SIZE];
-        let mut open = BinaryHeap::new();
-        cost[index(from.0, from.1)] = 0;
-        open.push(Reverse((estimate(from), 0_u32, from)));
-        while let Some(Reverse((_, so_far, tile))) = open.pop() {
-            if tile == to {
-                let mut path = vec![to];
-                let mut at = index(to.0, to.1);
-                while came[at] != usize::MAX {
-                    at = came[at];
-                    path.push((at % SIZE, at / SIZE));
-                }
-                path.reverse();
-                return Some(path);
-            }
-            if so_far > cost[index(tile.0, tile.1)] {
-                continue;
-            }
-            for dir in Dir::ALL {
-                let Some(next) = neighbor(tile, dir.step()) else {
-                    continue;
-                };
-                if !self.can_step(tile, next) {
-                    continue;
-                }
-                let i = index(next.0, next.1);
-                let step = so_far + 1;
-                if step < cost[i] {
-                    cost[i] = step;
-                    came[i] = index(tile.0, tile.1);
-                    open.push(Reverse((step + estimate(next), step, next)));
-                }
-            }
-        }
-        None
+        Pathfinder::new(SIZE, SIZE)
+            .find(from, to, |a, b| self.can_step(a, b).then_some(1))
+            .map(|path| path.cells)
     }
 }
 

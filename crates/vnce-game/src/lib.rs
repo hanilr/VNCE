@@ -7,6 +7,7 @@
 //!   solid tiles and among many objects.
 //! - [`SpriteSheet`], [`Animation`] and [`Animator`]: animated sprites.
 //! - [`TileMap`] and [`Tileset`]: grid worlds loaded from text, with solid tiles.
+//! - [`Pathfinder`]: shortest paths on a grid with A* (tile maps, height maps, costs).
 //! - [`Camera`]: a scrolling view that follows a target, smoothly and inside the world.
 //! - [`Scene`] and [`SceneStack`]: title, game, pause and game-over screens.
 //! - [`Timer`] and [`ease`]: cooldowns, repeating events and easing curves.
@@ -25,6 +26,7 @@ pub mod actions;
 pub mod camera;
 pub mod collision;
 pub mod particles;
+pub mod path;
 pub mod random;
 pub mod save;
 pub mod scene;
@@ -37,6 +39,7 @@ pub use actions::{ActionMap, Binding, ParseBindingError};
 pub use camera::Camera;
 pub use collision::{Aabb, Movement, Sides, SpatialGrid, move_and_collide};
 pub use particles::{Emitter, Particle, Spread};
+pub use path::{Neighbors, Path, Pathfinder};
 pub use random::Rng;
 pub use save::{SaveFile, data_dir};
 pub use scene::{Scene, SceneStack, Transition};
