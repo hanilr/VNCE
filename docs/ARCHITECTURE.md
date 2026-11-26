@@ -22,13 +22,13 @@ The engine is **cross-platform** and targets:
 
 | Package        | Import name    | Responsibility                                                       | Status     |
 | -------------- | -------------- | -------------------------------------------------------------------- | ---------- |
-| `vnce-core`    | `vnce_core`    | Geometry, color, style, cell and buffer types.                       | Phase 1    |
+| `vnce-core`    | `vnce_core`    | Geometry, color, style, cell and buffer types; vector math and a camera. | Phase 1, 19 |
 | `vnce-term`    | `vnce_term`    | Terminal output, double-buffered rendering, input, queries, images.  | Phase 1, 4 |
 | `vnce-runtime` | `vnce_runtime` | Fixed-timestep game loop, frame limiting, input state, `Game`.       | Phase 2    |
 | `vnce-raster`  | `vnce_raster`  | Pixel canvas, CPU rasterizer, bitmap fonts, pixel-to-cell modes.     | Phase 3    |
 | `vnce-gpu`     | `vnce_gpu`     | `wgpu` offscreen rendering, readback, shader and mesh helpers.       | Phase 5    |
 | `vnce-ui`      | `vnce_ui`      | A small set of widgets for games and graphics applications.          | Phase 6    |
-| `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers, random numbers, save files. | Phase 8, 11 |
+| `vnce-game`    | `vnce_game`    | Key bindings, collision, sprites, tile maps, camera, scenes, timers, tweens, particles, path finding, random numbers, save files. | Phase 8, 11, 19 |
 | `vnce-audio`   | `vnce_audio`   | Mixer, WAV / OGG decoding, sound synthesis, playback with `cpal`.    | Phase 9    |
 | `vnce-window`  | `vnce_window`  | Native window: cells and images drawn with `wgpu`, `winit` events.   | Phase 18   |
 | `vnce`         | `vnce`         | Public facade; re-exports the crates above behind feature flags.     | Phase 1    |
@@ -173,6 +173,9 @@ converted through the same pixel modes. Enabled with a `gpu` feature flag.
   into distance fog per pixel in world space; vertices without a normal stay unlit), with
   a small `Mat4` type and vector helpers. Users can
   also write their own `wgpu` passes; the `wgpu` crate is re-exported.
+- The math (`Mat4`, `Vec3`) lives in `vnce_core::math`, so CPU renderers and game code
+  without the `gpu` feature use the same types; `vnce_gpu::math` re-exports it. The
+  uniforms store `Mat4::cols`, since `vnce-core` does not depend on `bytemuck`.
 - A process has one GPU device (`Gpu::new` returns it once it exists). A native window
   that draws with it marks it, and `RenderTarget::show` then hands the texture to the
   window instead of reading it back.
@@ -218,6 +221,16 @@ ECS):
   interpolation with `ctx.alpha()`, pixel-rounded offsets).
 - `SceneStack` runs `Scene`s as a `Game`: push / pop / switch / quit transitions, overlays
   drawn over the scenes below, data shared by all scenes. `Timer` and easing curves.
+- `Tween<T>` runs any `Lerp` value (numbers, `[f32; N]`, pairs, `Rgba`) over a
+  `Duration` along an `ease` curve; `retarget` continues from the current value.
+- `Emitter`: particles with 3D positions (2D games leave z at zero), spawned in bursts or
+  at a rate (`Spread::Circle`, `Arc`, `Sphere`, `Cone`), moved with gravity and a drag
+  per second (frame-rate independent), colored and sized over their life, drawn through
+  a projection closure, so one type serves 2D, isometric and 3D games. Axes without
+  jitter take no random number, so random sequences stay stable.
+- `Pathfinder`: A* on a grid from a step-cost callback (`None` = blocked), 4 or 8
+  neighbors without corner cutting, a cost limit, ties broken by the heap order of
+  `(estimate, cost, cell)` so results are deterministic; `find_on_tilemap` for tile maps.
 - `Rng`: a seeded xorshift64* generator (no dependency) for level generation; `below`
   uses a multiply-high instead of a modulo for an even spread.
 - `SaveFile`: plain-text `key = value` files in the user's data folder (`data_dir`), typed
@@ -271,7 +284,15 @@ alignment), `Block` (box-drawing borders, title), `Gauge`, `Layout` (rect splitt
 an `FpsOverlay` for debugging.
 
 - Immediate mode: `Widget::render(area, buffer)` every frame; `List` keeps its selection
-  and scroll position in a `ListState` (`StatefulWidget`).
+  and scroll position in a `ListState` (`StatefulWidget`); `Table` uses the same state.
+- `TextInputState` holds a one-line text, a cursor on grapheme boundaries, a character
+  filter and a length limit; `handle_event` takes key and paste events (`vnce-ui`
+  depends on `vnce-term` for them) and leaves Enter, Esc and Tab to the game.
+  `TextInput` scrolls sideways to keep the cursor visible.
+- `Tabs`, `Slider`, `Checkbox` and `Button` are stateless; the game keeps the values.
+  `Slider` and `Checkbox` also give a `Line` for list rows.
+- Mouse hit testing works from the area a widget was drawn in: `List::item_at`,
+  `Table::row_at`, `Tabs::tab_at`, `Slider::value_at`, `Button::contains`.
 - `Layout`: `Length`, `Percentage`, `Ratio`, `Min`, `Max` and `Fill` constraints with
   spacing and margin; shrinks proportionally (`Min` last) when space is short, shares free
   space by weight, gives rounding leftovers to the largest fractions and never leaves the
@@ -324,8 +345,7 @@ an `FpsOverlay` for debugging.
    [`plans/2026-11-25-phase-17-3d-flight-demo.md`](plans/2026-11-25-phase-17-3d-flight-demo.md).
 18. **Phase 18:** The native window `vnce-window` — see
    [`plans/2026-11-25-phase-18-window-backend.md`](plans/2026-11-25-phase-18-window-backend.md).
-19. **Phase 19 (planned):** Game toolkit: paths, particles, easing, math and more
-   widgets — see [`plans/2026-11-25-phase-19-game-toolkit.md`](plans/2026-11-25-phase-19-game-toolkit.md).
+19. **Phase 19:** Game toolkit: paths, particles, easing, math and more widgets — see [`plans/2026-11-25-phase-19-game-toolkit.md`](plans/2026-11-25-phase-19-game-toolkit.md).
 20. **Phase 20 (planned):** Gamepads and a more complete window — see
    [`plans/2026-11-25-phase-20-gamepads-and-window.md`](plans/2026-11-25-phase-20-gamepads-and-window.md).
 21. **Phase 21 (planned):** Documentation, publishing and a wiki front page — see

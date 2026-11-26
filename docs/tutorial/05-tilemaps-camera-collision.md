@@ -145,4 +145,37 @@ assert!((3..7).contains(&damage) && reward.is_some());
 let _ = Rng::from_time();
 ```
 
+## Finding the way
+
+Enemies that chase the player and units sent by a click need the shortest way around the
+walls. `find_on_tilemap` finds it on a tile map with A*; `Pathfinder` does the same on
+any grid, with a cost for every step, so mud can be slower than grass and cliffs can be
+one way.
+
+```rust
+use vnce::vnce_game::path::{Neighbors, Pathfinder, find_on_tilemap};
+use vnce::vnce_game::{SpriteSheet, TileMap, Tileset};
+use vnce::vnce_raster::Canvas;
+
+let text = "\
+.........
+....#....
+....#....
+.........";
+let map = TileMap::from_text(text, 8, |c| (c == '#').then_some(0));
+let tileset = Tileset::new(SpriteSheet::new(Canvas::new(8, 8), 8, 8)).with_solid([0]);
+let path = find_on_tilemap(&map, &tileset, (2, 2), (6, 2), Neighbors::Four).unwrap();
+assert_eq!(path.cells.first(), Some(&(2, 2)));
+assert_eq!(path.cost, 6); // around the wall
+
+// Any grid: `step(from, to)` is the cost of a step, or `None` where it is not allowed.
+let mud = |(x, _y): (usize, usize)| x == 4;
+let path = Pathfinder::new(9, 4)
+    .neighbors(Neighbors::Eight)
+    .max_cost(40) // give up on far goals (keeps big maps fast)
+    .find((0, 0), (8, 0), |_, to| Some(if mud(to) { 5 } else { 1 }))
+    .unwrap();
+assert_eq!(path.cost, 12); // straight through the mud: cheaper than around it here
+```
+
 Next: [Scenes, UI and saving](06-scenes-and-ui.md).

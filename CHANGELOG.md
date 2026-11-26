@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `vnce_core::math`: `Vec2` / `Vec3` helpers for arrays of any length (`add`, `sub`,
+  `scale`, `dot`, `length`, `distance`, `normalize`, `lerp`; `cross`, `rotate`,
+  `rotate2`, `direction`), `Mat4` (with `basis`, `heading`, `look_to`, `apply`,
+  `transform_direction`) and a perspective `Camera` (`project`, `ray`, `with_lens`), so
+  game code and CPU renderers share the GPU's types without the `gpu` feature.
+- `vnce_game::Tween` and `Lerp`: values that run from a start to an end over a time along
+  an easing curve, with `retarget`; `ease` gains sine, back (in, in-out), elastic and
+  bounce curves.
+- `vnce_game::particles`: `Emitter` for sparks, debris, smoke and rain (bursts or a
+  steady rate; circle, arc, sphere or cone spread; gravity, drag, colors and size over
+  life, fading; drawn through any projection) and `Particle` for hand-made shapes.
+- `vnce_game::path`: A* path finding (`Pathfinder` with step costs, 4 or 8 neighbors, a
+  cost limit; `find_on_tilemap`).
+- `vnce_ui`: `TextInput` / `TextInputState` (a text field with cursor, editing keys,
+  paste, filter and length limit), `Table` / `TableState`, `Tabs`, `Slider`, `Checkbox`
+  and `Button`; mouse hit testing with `List::item_at`, `Table::row_at`, `Tabs::tab_at`,
+  `Slider::value_at` and `Button::contains`; `ListState::set_offset`.
+- The `ui` example has a controls page and a high-score table, works with the mouse and
+  has a smoke test.
+
+### Changed
+
+- `vnce_gpu::Mat4` and `Vec3` are re-exports of `vnce_core::math` (same paths, same
+  layout); `Mat4` no longer implements `bytemuck::Pod` (use `Mat4::cols` in uniforms).
+- `vnce-ui` depends on `vnce-term` (for key and paste events).
+- The showcases use the new tools: Glide's math, the sparks of Relay, Isle and Glide,
+  Isle's camera turn and path finding, and the code entry and volume rows of Isle and
+  Glide. Relay's sparks slow down per second instead of per frame, so they look the same
+  at every frame rate.
+
 ## [0.1.0] - 2026-11-26
 
 ### Added

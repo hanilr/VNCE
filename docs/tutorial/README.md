@@ -13,11 +13,11 @@ foot and most Linux terminals work; the engine picks the best way to draw pixels
 2. [Game loop and input](02-game-loop-and-input.md): fixed updates, held keys, actions.
 3. [Pixel graphics](03-pixel-graphics.md): the canvas, shapes, text and display methods.
 4. [Sprites and animation](04-sprites-and-animation.md): art in code, sprite sheets,
-   animators.
+   animators, tweens, particles.
 5. [Tile maps, camera and collision](05-tilemaps-camera-collision.md): worlds bigger than
-   the screen, walls, many objects, random levels.
+   the screen, walls, many objects, random levels, path finding.
 6. [Scenes, UI and saving](06-scenes-and-ui.md): title, pause and settings screens,
-   widgets, save files.
+   widgets, text fields, the mouse, save files.
 7. [Sound](07-sound.md): effects and music generated in code.
 8. [Performance tips](08-performance.md): display methods, frame rates and release builds.
 

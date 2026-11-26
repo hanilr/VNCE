@@ -142,8 +142,47 @@ let row: String = (area.x..area.x + 24)
 assert!(row.contains("▶ Start"));
 ```
 
-Other widgets: `Paragraph` (text with wrapping and alignment), `FpsOverlay` (frames per
-second in a corner, handy while developing). Text drawn after an image appears over it in
+Other widgets: `Paragraph` (text with wrapping and alignment), `Table` (columns with a
+header and a selected row, for high scores), `Tabs` (page titles), `Slider`, `Checkbox`
+and `Button` (settings), `FpsOverlay` (frames per second in a corner, handy while
+developing).
+
+A name or a level code is typed into a `TextInput`. Its state keeps the text, the cursor
+and the rules; hand it the key events and keep Enter and Esc for yourself:
+
+```rust
+use vnce::vnce_core::{Buffer, Rect, Size};
+use vnce::vnce_term::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use vnce::vnce_ui::{Block, StatefulWidget, TextInput, TextInputState};
+
+// Six letters, typed in capitals.
+let mut code = TextInputState::new()
+    .max_len(6)
+    .filter(|c| c.is_ascii_alphabetic().then(|| c.to_ascii_uppercase()));
+
+// In `event`:
+let event = Event::Key(KeyEvent {
+    code: KeyCode::Char('q'),
+    modifiers: KeyModifiers::NONE,
+    kind: KeyEventKind::Press,
+});
+if !code.handle_event(&event) {
+    // Not an editing key: Enter, Esc, ... are the game's.
+}
+assert_eq!(code.text(), "Q");
+
+// In `render`:
+let mut buffer = Buffer::empty(Size::new(12, 3));
+TextInput::new()
+    .placeholder("CODE")
+    .block(Block::bordered())
+    .render(Rect::new(0, 0, 12, 3), &mut buffer, &mut code);
+```
+
+With the mouse (`config.terminal.mouse_capture = true`), the widgets tell what is under a
+cell: `List::item_at`, `Table::row_at`, `Tabs::tab_at`, `Slider::value_at` and
+`Button::contains` take the area the widget was drawn in and
+`ctx.input().mouse_position()`. The `ui` example shows every widget, with the mouse. Text drawn after an image appears over it in
 cell modes; with graphics protocols, images cover text, so put menus beside or over a
 plain background there.
 

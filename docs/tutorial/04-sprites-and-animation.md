@@ -102,4 +102,77 @@ let x = ease::lerp(-40.0, 0.0, ease::out_cubic(t));
 assert!(x > -20.0); // already more than halfway
 ```
 
+A `Tween` does the counting for you: it runs a value (a number, a `[f32; N]` vector, a
+pair or an `Rgba` color) from a start to an end over a time, along a curve. `ease` has
+quadratic, cubic, sine, back, elastic and bounce curves (`in_`, `out_` and `in_out_`).
+
+```rust
+use std::time::Duration;
+use vnce::vnce_game::{Tween, ease};
+use vnce::vnce_raster::Rgba;
+
+let mut slide = Tween::new(-40.0, 0.0, Duration::from_millis(400)).with_ease(ease::out_back);
+slide.update(Duration::from_millis(100)); // in `update`, with the frame's time
+let x = slide.value();
+assert!(x > -40.0 && !slide.is_finished());
+
+// A camera that eases towards a target that keeps moving: no jumps.
+let mut camera = Tween::new([0.0, 0.0], [100.0, 50.0], Duration::from_millis(300));
+camera.update(Duration::from_millis(150));
+camera.retarget([120.0, 60.0]); // from where it is now, the whole time again
+
+let mut flash = Tween::new(Rgba::WHITE, Rgba::rgb(200, 40, 40), Duration::from_millis(200));
+flash.update(Duration::from_millis(200));
+assert_eq!(flash.value(), Rgba::rgb(200, 40, 40));
+```
+
+## Particles
+
+Sparks, dust, smoke and rain come from an `Emitter`: set it up once, spawn particles in
+bursts (or at a steady rate with `emit`), move them every update and draw them through a
+projection. Positions are 3D; a 2D game leaves z at zero.
+
+```rust
+use std::time::Duration;
+use vnce::vnce_game::{Emitter, Rng, Spread};
+use vnce::vnce_raster::{BlendMode, Canvas, Rgba};
+
+let mut sparks = Emitter::new()
+    .spread(Spread::Circle) // every direction on the screen
+    .speed(20.0, 70.0) // pixels per second
+    .life(0.4, 0.9) // seconds
+    .drag(4.8) // slow down quickly
+    .colors([Rgba::rgb(255, 200, 80), Rgba::rgb(255, 120, 40)])
+    .end_color(Rgba::rgb(120, 20, 0))
+    .fade(0.3); // fade out over the last 0.3 s
+
+let mut dust = Emitter::new()
+    .spread(Spread::Arc { angle: -std::f32::consts::FRAC_PI_2, width: 1.0 }) // upwards
+    .speed(5.0, 15.0)
+    .gravity([0.0, 30.0, 0.0]) // y grows downwards on the screen
+    .rate(40.0) // per second, with `emit`
+    .blend(BlendMode::Alpha)
+    .colors([Rgba::rgb(160, 140, 110)]);
+
+let mut rng = Rng::new(1);
+// When a coin is taken:
+sparks.burst(&mut rng, [40.0, 30.0, 0.0], 30);
+// Every update while the player runs:
+let dt = Duration::from_millis(16);
+dust.emit(&mut rng, [20.0, 44.0, 0.0], dt);
+sparks.update(dt);
+dust.update(dt);
+
+// In `render`: x and y are already pixels here; an isometric or 3D game projects them
+// (and returns a scale for the size, for example smaller far away).
+let mut canvas = Canvas::new(80, 48);
+sparks.draw(&mut canvas, |[x, y, _]| Some((x, y, 1.0)));
+dust.draw(&mut canvas, |[x, y, _]| Some((x, y, 1.0)));
+assert_eq!(sparks.len(), 30);
+```
+
+`Spread::Sphere` and `Spread::Cone` fly off in 3D. For a shape the settings do not cover
+(a ring of sparks around a gate), make the particles yourself and `spawn` them; the
+emitter still moves, fades and draws them.
+
 Next: [Tile maps, camera and collision](05-tilemaps-camera-collision.md).

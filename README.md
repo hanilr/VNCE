@@ -69,14 +69,17 @@ F11 / Alt+Enter for fullscreen; `--terminal` keeps the terminal. See
 
 For interfaces, `vnce_ui` (feature `ui`, on by default) has a small set of widgets: `Layout`,
 `Paragraph` (wrapping, alignment, `…`), `Block` (borders and titles), `Gauge`, `List` (menus),
-`FpsOverlay` and `Clear` (popups). They draw into `frame.buffer_mut()` next to pixel
-graphics.
+`Table`, `Tabs`, `TextInput` (names and codes), `Slider`, `Checkbox`, `Button`,
+`FpsOverlay` and `Clear` (popups), with mouse hit testing. They draw into
+`frame.buffer_mut()` next to pixel graphics.
 
 For games, `vnce_game` (feature `game`, on by default) has key bindings (`ActionMap`),
 collision (`Aabb`, `move_and_collide` through solid tiles, `SpatialGrid`), sprite sheets
 and animation, tile maps loaded from text, a following `Camera`, scenes (`SceneStack`:
-title, play, pause …), timers, a seeded random generator (`Rng`) and save files
-(`SaveFile`) for best scores, settings and key bindings.
+title, play, pause …), timers, easing and tweens, particles (`Emitter`), A* path finding
+(`Pathfinder`), a seeded random generator (`Rng`) and save files (`SaveFile`) for best
+scores, settings and key bindings. `vnce_core::math` has vectors, a 4×4 matrix and a
+perspective camera for 3D on the CPU or the GPU.
 
 For sound, enable the `audio` feature: `vnce_audio` mixes sounds (volume, pan, speed,
 looping, fades, music and effects groups), decodes WAV (and OGG Vorbis with the `ogg`
@@ -93,7 +96,7 @@ Run the bundled examples (press `q` or `Esc` to quit):
 ```sh
 cargo run --example hello             # styles, colors, Unicode, input events
 cargo run --example stars             # a small game: arrows/WASD, +/- to change the FPS
-cargo run --example ui                # widgets: menu, gauges, chart, popup, FPS overlay
+cargo run --example ui                # widgets: menu, tabs, table, text field, slider, mouse
 cargo run --release --example platformer   # a small platformer: arrows/WASD, Space, P
 cargo run --release --example platformer --features audio   # … with sound and music
 cargo run --release --example sfx --features audio          # sound effect workshop
