@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use vnce::vnce_core::{Color, Rect, Style};
 use vnce::vnce_game::{
-    Aabb, Animation, Animator, Camera, Playback, Rng, Scene, SpatialGrid, SpriteSheet, Timer,
-    Transition, ease, move_and_collide,
+    Aabb, Animation, Animator, Camera, Playback, Rng, Scene, SpatialGrid, SpriteSheet, Transition,
+    Tween, ease, move_and_collide,
 };
 use vnce::vnce_raster::{BlendMode, BlitOptions, Canvas, Font, PixelRect, Rgba};
 use vnce::vnce_runtime::Context;
@@ -64,13 +64,6 @@ struct Player {
     moving: bool,
 }
 
-/// A camera turn in progress.
-struct Turn {
-    from: f32,
-    to: f32,
-    timer: Timer,
-}
-
 /// Something drawn between the tiles, sorted by depth.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Actor {
@@ -123,7 +116,8 @@ pub struct Play {
     camera: Camera,
     /// The camera's direction in quarter turns (0–3).
     quarter: u8,
-    turn: Option<Turn>,
+    /// A camera turn in progress: the angle, eased between quarters.
+    turn: Option<Tween<f32>>,
     zoom: usize,
     /// Seconds since the game started (stops while paused).
     time: f32,
@@ -398,10 +392,7 @@ impl Play {
     /// The camera angle now: eased between quarters while turning.
     fn angle(&self) -> f32 {
         match &self.turn {
-            Some(turn) => {
-                let t = ease::in_out_cubic(turn.timer.progress());
-                turn.from + (turn.to - turn.from) * t
-            }
+            Some(turn) => turn.value(),
             None => f32::from(self.quarter) * FRAC_PI_2,
         }
     }
@@ -409,11 +400,9 @@ impl Play {
     fn start_turn(&mut self, step: i32) {
         let from = self.angle();
         self.quarter = (i32::from(self.quarter) + step).rem_euclid(4) as u8;
-        self.turn = Some(Turn {
-            from,
-            to: from + step as f32 * FRAC_PI_2,
-            timer: Timer::once(TURN),
-        });
+        self.turn = Some(
+            Tween::new(from, from + step as f32 * FRAC_PI_2, TURN).with_ease(ease::in_out_cubic),
+        );
     }
 
     /// The tile the player stands on.
@@ -611,8 +600,8 @@ impl Scene<Shared> for Play {
             shared.map = !shared.map;
         }
         if let Some(turn) = &mut self.turn {
-            turn.timer.update(dt);
-            if turn.timer.is_finished() {
+            turn.update(dt);
+            if turn.is_finished() {
                 self.turn = None;
             }
         }
@@ -1434,7 +1423,7 @@ impl Play {
 mod tests {
     use std::time::Duration;
 
-    use super::{Play, Turn};
+    use super::Play;
     use crate::island::{Prop, index};
     use crate::write_png;
 
@@ -1522,13 +1511,16 @@ mod tests {
         write_png(&play.world, &format!("{folder}/play-hover.png"), 4);
         play.hover = None;
 
-        play.turn = Some(Turn {
-            from: 0.0,
-            to: std::f32::consts::FRAC_PI_2,
-            timer: vnce::vnce_game::Timer::once(Duration::from_millis(450)),
-        });
+        play.turn = Some(
+            vnce::vnce_game::Tween::new(
+                0.0,
+                std::f32::consts::FRAC_PI_2,
+                Duration::from_millis(450),
+            )
+            .with_ease(vnce::vnce_game::ease::in_out_cubic),
+        );
         if let Some(turn) = &mut play.turn {
-            turn.timer.update(Duration::from_millis(225));
+            turn.update(Duration::from_millis(225));
         }
         settle(&mut play);
         play.draw_world(&shared, 1.0, 240, 140);

@@ -1,5 +1,5 @@
 //! Time helpers: [`Timer`] for cooldowns and repeating events, [`ease`] curves for
-//! animating values.
+//! animating values (run over time by [`Tween`](crate::Tween)).
 
 use std::time::Duration;
 
@@ -189,6 +189,123 @@ pub mod ease {
         let t = clamp(t) - 1.0;
         1.0 + C3 * t.powi(3) + C1 * t.powi(2)
     }
+
+    /// Pulls back a little below `0.0` first, then goes (a wind-up).
+    #[must_use]
+    pub fn in_back(t: f32) -> f32 {
+        const C1: f32 = 1.701_58;
+        const C3: f32 = C1 + 1.0;
+        let t = clamp(t);
+        C3 * t.powi(3) - C1 * t.powi(2)
+    }
+
+    /// Pulls back at the start and overshoots at the end.
+    #[must_use]
+    pub fn in_out_back(t: f32) -> f32 {
+        const C2: f32 = 1.701_58 * 1.525;
+        let t = clamp(t);
+        if t < 0.5 {
+            (2.0 * t).powi(2) * ((C2 + 1.0) * 2.0 * t - C2) / 2.0
+        } else {
+            f32::midpoint(
+                (2.0 * t - 2.0).powi(2) * ((C2 + 1.0) * (t * 2.0 - 2.0) + C2),
+                2.0,
+            )
+        }
+    }
+
+    /// Starts slowly along a sine curve (gentler than quadratic).
+    #[must_use]
+    pub fn in_sine(t: f32) -> f32 {
+        1.0 - (clamp(t) * std::f32::consts::FRAC_PI_2).cos()
+    }
+
+    /// Ends slowly along a sine curve (gentler than quadratic).
+    #[must_use]
+    pub fn out_sine(t: f32) -> f32 {
+        (clamp(t) * std::f32::consts::FRAC_PI_2).sin()
+    }
+
+    /// Starts and ends slowly along a sine curve.
+    #[must_use]
+    pub fn in_out_sine(t: f32) -> f32 {
+        (1.0 - (clamp(t) * std::f32::consts::PI).cos()) / 2.0
+    }
+
+    /// Winds up with growing wobbles, then shoots to `1.0`.
+    #[must_use]
+    pub fn in_elastic(t: f32) -> f32 {
+        let t = clamp(t);
+        if t <= 0.0 || t >= 1.0 {
+            return t;
+        }
+        let c4 = std::f32::consts::TAU / 3.0;
+        -(2.0_f32.powf(10.0 * t - 10.0)) * ((t * 10.0 - 10.75) * c4).sin()
+    }
+
+    /// Shoots past `1.0` and wobbles back like a spring.
+    #[must_use]
+    pub fn out_elastic(t: f32) -> f32 {
+        let t = clamp(t);
+        if t <= 0.0 || t >= 1.0 {
+            return t;
+        }
+        let c4 = std::f32::consts::TAU / 3.0;
+        2.0_f32.powf(-10.0 * t) * ((t * 10.0 - 0.75) * c4).sin() + 1.0
+    }
+
+    /// Wobbles at the start and at the end.
+    #[must_use]
+    pub fn in_out_elastic(t: f32) -> f32 {
+        let t = clamp(t);
+        if t <= 0.0 || t >= 1.0 {
+            return t;
+        }
+        let c5 = std::f32::consts::TAU / 4.5;
+        let wave = ((20.0 * t - 11.125) * c5).sin();
+        if t < 0.5 {
+            -(2.0_f32.powf(20.0 * t - 10.0) * wave) / 2.0
+        } else {
+            2.0_f32.powf(-20.0 * t + 10.0) * wave / 2.0 + 1.0
+        }
+    }
+
+    /// Bounces up from `0.0` a few times before leaving (the reverse of [`out_bounce`]).
+    #[must_use]
+    pub fn in_bounce(t: f32) -> f32 {
+        1.0 - out_bounce(1.0 - clamp(t))
+    }
+
+    /// Falls to `1.0` and bounces a few times, like a dropped ball.
+    #[must_use]
+    pub fn out_bounce(t: f32) -> f32 {
+        const N1: f32 = 7.5625;
+        const D1: f32 = 2.75;
+        let t = clamp(t);
+        if t < 1.0 / D1 {
+            N1 * t * t
+        } else if t < 2.0 / D1 {
+            let t = t - 1.5 / D1;
+            N1 * t * t + 0.75
+        } else if t < 2.5 / D1 {
+            let t = t - 2.25 / D1;
+            N1 * t * t + 0.9375
+        } else {
+            let t = t - 2.625 / D1;
+            N1 * t * t + 0.984_375
+        }
+    }
+
+    /// Bounces at the start and at the end.
+    #[must_use]
+    pub fn in_out_bounce(t: f32) -> f32 {
+        let t = clamp(t);
+        if t < 0.5 {
+            (1.0 - out_bounce(1.0 - 2.0 * t)) / 2.0
+        } else {
+            f32::midpoint(1.0, out_bounce(2.0 * t - 1.0))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -228,7 +345,7 @@ mod tests {
 
     #[test]
     fn easing_curves_start_at_zero_and_end_at_one() {
-        let curves: [fn(f32) -> f32; 8] = [
+        let curves: [fn(f32) -> f32; 19] = [
             ease::linear,
             ease::in_quad,
             ease::out_quad,
@@ -237,6 +354,17 @@ mod tests {
             ease::out_cubic,
             ease::in_out_cubic,
             ease::out_back,
+            ease::in_back,
+            ease::in_out_back,
+            ease::in_sine,
+            ease::out_sine,
+            ease::in_out_sine,
+            ease::in_elastic,
+            ease::out_elastic,
+            ease::in_out_elastic,
+            ease::in_bounce,
+            ease::out_bounce,
+            ease::in_out_bounce,
         ];
         for curve in curves {
             assert!(curve(0.0).abs() < 1e-5);
@@ -247,6 +375,14 @@ mod tests {
         assert!(ease::in_quad(0.5) < 0.5 && ease::out_quad(0.5) > 0.5);
         assert!((ease::in_out_cubic(0.5) - 0.5).abs() < 1e-5);
         assert!((0..=100_u8).any(|i| ease::out_back(f32::from(i) / 100.0) > 1.0));
+        assert!((0..=100_u8).any(|i| ease::in_back(f32::from(i) / 100.0) < 0.0));
+        assert!((0..=100_u8).any(|i| ease::out_elastic(f32::from(i) / 100.0) > 1.0));
+        assert!((ease::in_out_sine(0.5) - 0.5).abs() < 1e-5);
+        assert!((ease::in_out_bounce(0.5) - 0.5).abs() < 1e-5);
+        assert!((ease::in_out_elastic(0.5) - 0.5).abs() < 1e-5);
+        assert!((ease::in_out_back(0.5) - 0.5).abs() < 1e-5);
+        // A bounce touches 1.0 between the hops and never goes past it.
+        assert!((0..=100_u8).all(|i| ease::out_bounce(f32::from(i) / 100.0) <= 1.0 + 1e-5));
         assert!((ease::lerp(2.0, 4.0, 0.25) - 2.5).abs() < f32::EPSILON);
     }
 }

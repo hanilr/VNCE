@@ -10,6 +10,7 @@
 //! - [`Camera`]: a scrolling view that follows a target, smoothly and inside the world.
 //! - [`Scene`] and [`SceneStack`]: title, game, pause and game-over screens.
 //! - [`Timer`] and [`ease`]: cooldowns, repeating events and easing curves.
+//! - [`Tween`] and [`Lerp`]: values that run smoothly from a start to an end over time.
 //! - [`Rng`]: seeded random numbers for level generation and gameplay.
 //! - [`SaveFile`]: best scores, settings and key bindings kept between runs.
 //!
@@ -28,6 +29,7 @@ pub mod scene;
 pub mod sprite;
 pub mod tilemap;
 pub mod timer;
+pub mod tween;
 
 pub use actions::{ActionMap, Binding, ParseBindingError};
 pub use camera::Camera;
@@ -38,3 +40,4 @@ pub use scene::{Scene, SceneStack, Transition};
 pub use sprite::{Animation, Animator, Playback, SpriteSheet};
 pub use tilemap::{TileId, TileMap, Tileset};
 pub use timer::{Timer, ease};
+pub use tween::{Lerp, Tween};
