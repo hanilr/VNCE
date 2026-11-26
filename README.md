@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/vnce-logo.svg" alt="The VNCE logo: the Variation horse on a dark badge, turning from pixels into a smooth drawing" width="200">
+  <img src="https://raw.githubusercontent.com/hanilr/VNCE/main/assets/logo/vnce-logo-256.png" alt="The VNCE logo: the Variation horse on a dark badge, turning from pixels into a smooth drawing" width="200">
 </p>
 
 # Variation CLI Engine (vnce)

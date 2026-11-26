@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-26
+
 ### Added
 
 - The VNCE logo (`assets/logo`: SVG and 16 to 512 px PNGs) and a 1280 x 640 banner for
@@ -290,3 +292,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terminal queries: an unterminated APC, DCS or OSC answer (or a broken CSI) no longer
   hides the answers after it; an `ESC` inside a sequence cancels it, as in xterm.
 - The raster robustness tests build without the `png` feature.
+
+[Unreleased]: https://github.com/hanilr/VNCE/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hanilr/VNCE/releases/tag/v0.1.0
