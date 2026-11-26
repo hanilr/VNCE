@@ -11,16 +11,18 @@ terminal, rendered on the **CPU** or the **GPU**.
 
 It is part of the **Variation** ecosystem.
 
-> **Status:** early development (Phase 18: core types, terminal layer, game loop, pixel
-> graphics, terminal graphics protocols, GPU rendering with light and fog, widgets, game
-> building blocks, audio, a tutorial, an optimization pass, the showcase games Relay, Isle
-> and Glide, and a native window backend). The API is not stable yet.
+> **Status:** early development, version 0.3 (Phase 20: core types, terminal layer, game
+> loop, pixel graphics, terminal graphics protocols, GPU rendering with light and fog,
+> widgets, game building blocks, audio, a tutorial, an optimization pass, the showcase
+> games Relay, Isle and Glide, a native window backend, a game toolkit with math, tweens,
+> particles and path finding, and gamepads with window control). The API is not stable
+> yet.
 
 ## Usage
 
 ```toml
 [dependencies]
-vnce = "0.1"
+vnce = "0.3"
 ```
 
 ```rust,no_run
@@ -88,7 +90,9 @@ looping, fades, music and effects groups), decodes WAV (and OGG Vorbis with the 
 feature), generates retro sound effects and tunes in code (`Synth`, `Preset`, `Melody`)
 and plays them on the default device with `cpal`. Without a device, games stay silent
 instead of failing. On Linux the `audio` feature needs the ALSA development files
-(`libasound2-dev` on Debian / Ubuntu, `alsa-lib-devel` on Fedora).
+(`libasound2-dev` on Debian / Ubuntu, `alsa-lib-devel` on Fedora), and the `window`
+feature the udev ones for gamepads (`libudev-dev` on Debian / Ubuntu, `systemd-devel` on
+Fedora).
 
 New to the engine? The [tutorial](docs/tutorial/README.md) builds a game step by step,
 from the first window to sprites, tile maps, scenes, saving and sound.
@@ -106,6 +110,7 @@ cargo run --release --example lantern      # a cave game: arrows/WASD, P, settin
 cargo run --release --example relay --features gpu,audio   # the showcase: every feature in one game
 cargo run --release --example isle --features gpu,audio    # the 2.5D showcase: an isometric island
 cargo run --release --example glide --features gpu,audio   # the 3D showcase: a flight through rings
+cargo run --release --example glide --features gpu,window,audio   # … in a native window, with a gamepad
 cargo run --release --example raster  # pixel graphics; M: pixel mode, D: dithering
 cargo run --release --example raster -- image.png   # show a PNG image
 cargo run --release --example image   # real pixels (Kitty / Sixel / iTerm2); G: method
