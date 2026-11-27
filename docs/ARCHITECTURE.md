@@ -362,7 +362,7 @@ an `FpsOverlay` for debugging.
 19. **Phase 19:** Game toolkit: paths, particles, easing, math and more widgets — see [`plans/2026-11-25-phase-19-game-toolkit.md`](plans/2026-11-25-phase-19-game-toolkit.md).
 20. **Phase 20:** Gamepads and a more complete window — see
    [`plans/2026-11-25-phase-20-gamepads-and-window.md`](plans/2026-11-25-phase-20-gamepads-and-window.md).
-21. **Phase 21 (planned):** Documentation, publishing and a wiki front page — see
+21. **Phase 21 (moved to Phase 28):** Documentation, publishing and a wiki front page — see
    [`plans/2026-11-25-phase-21-docs-and-publishing.md`](plans/2026-11-25-phase-21-docs-and-publishing.md).
 22. **Phase 22 (planned):** Text in every language — see
    [`plans/2026-11-25-phase-22-every-language.md`](plans/2026-11-25-phase-22-every-language.md).
@@ -377,5 +377,7 @@ an `FpsOverlay` for debugging.
 27. **Phase 27 (planned):** Better mouse support: pixel positions, picture coordinates,
    more buttons, drags, mouse look and cursor shapes — see
    [`plans/2026-11-26-phase-27-mouse.md`](plans/2026-11-26-phase-27-mouse.md).
+28. **Phase 28 (planned, last):** Documentation, the tutorial and a front page — see
+   [`plans/2026-11-27-phase-28-docs-and-tutorial.md`](plans/2026-11-27-phase-28-docs-and-tutorial.md).
 
 Each phase gets its own plan in [`plans/`](plans/) before implementation starts.

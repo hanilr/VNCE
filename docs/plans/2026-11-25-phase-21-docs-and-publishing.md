@@ -3,6 +3,10 @@
 **Date:** 2026-11-25
 **Status:** Planned, waiting for the user's approval to start (proposed after a review of
 what the library still lacks; the user asked for the plan on 2026-11-25)
+**Moved:** on 2026-11-27 the user asked to make the documentation and tutorial work the
+last phase; this plan continues as
+[Phase 28](2026-11-27-phase-28-docs-and-tutorial.md). Publishing was done in the 0.1.0
+release (2026-11-26); the rest (chapters, the flaky test, the front page) is in Phase 28.
 
 ## Goal
 
