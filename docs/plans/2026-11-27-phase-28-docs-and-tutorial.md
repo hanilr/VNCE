@@ -3,7 +3,7 @@
 **Date:** 2026-11-27
 **Status:** Planned, waiting for the user's approval to start (the user asked on
 2026-11-27 to make the documentation and tutorial work the last phase; it takes over
-Phase 21, whose plan stays in
+the earlier Phase 21 plan, which stays in
 [`2026-11-25-phase-21-docs-and-publishing.md`](2026-11-25-phase-21-docs-and-publishing.md))
 
 ## Goal

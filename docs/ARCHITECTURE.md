@@ -362,8 +362,11 @@ an `FpsOverlay` for debugging.
 19. **Phase 19:** Game toolkit: paths, particles, easing, math and more widgets — see [`plans/2026-11-25-phase-19-game-toolkit.md`](plans/2026-11-25-phase-19-game-toolkit.md).
 20. **Phase 20:** Gamepads and a more complete window — see
    [`plans/2026-11-25-phase-20-gamepads-and-window.md`](plans/2026-11-25-phase-20-gamepads-and-window.md).
-21. **Phase 21 (moved to Phase 28):** Documentation, publishing and a wiki front page — see
-   [`plans/2026-11-25-phase-21-docs-and-publishing.md`](plans/2026-11-25-phase-21-docs-and-publishing.md).
+21. **Phase 21 (planned):** Optimization: the GPU, the window, the toolkit, widgets and
+   audio measured and made faster — see
+   [`plans/2026-11-27-phase-21-optimization.md`](plans/2026-11-27-phase-21-optimization.md).
+   (The earlier Phase 21 plan, documentation and publishing, moved to Phase 28 — see
+   [`plans/2026-11-25-phase-21-docs-and-publishing.md`](plans/2026-11-25-phase-21-docs-and-publishing.md).)
 22. **Phase 22 (planned):** Text in every language — see
    [`plans/2026-11-25-phase-22-every-language.md`](plans/2026-11-25-phase-22-every-language.md).
 23. **Phase 23 (planned):** Assets and sounds — see

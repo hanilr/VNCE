@@ -7,6 +7,8 @@ what the library still lacks; the user asked for the plan on 2026-11-25)
 last phase; this plan continues as
 [Phase 28](2026-11-27-phase-28-docs-and-tutorial.md). Publishing was done in the 0.1.0
 release (2026-11-26); the rest (chapters, the flaky test, the front page) is in Phase 28.
+The number 21 is now used by the
+[optimization phase](2026-11-27-phase-21-optimization.md).
 
 ## Goal
 
