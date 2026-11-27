@@ -56,7 +56,7 @@ tmux, Sixel works when tmux draws it (tmux 3.4 or newer built with Sixel), and K
 images work with `set -g allow-passthrough on` in the tmux configuration; without it,
 starting takes about 300 ms longer while the query waits for the outer terminal.
 
-For GPU rendering, enable the `gpu` feature (`vnce = { version = "0.1",
+For GPU rendering, enable the `gpu` feature (`vnce = { version = "0.3",
 features = ["gpu"] }`): `vnce_gpu` renders with `wgpu` (Vulkan, DX12, Metal or OpenGL, with a
 software fallback) into a `RenderTarget` that is read back into a canvas and shown like any
 other image. It comes with a full-screen shader helper (`ShaderQuad`) and a 3D mesh renderer

@@ -33,7 +33,9 @@ cargo add vnce
 
 `vnce` re-exports every part of the engine: `vnce::vnce_runtime` (the game loop),
 `vnce::vnce_raster` (pixels), `vnce::vnce_game` (game building blocks), `vnce::vnce_ui`
-(widgets) and, with features, `vnce::vnce_audio` (`audio`) and `vnce::vnce_gpu` (`gpu`).
+(widgets) and, with features, `vnce::vnce_audio` (`audio`), `vnce::vnce_gpu` (`gpu`) and
+`vnce::vnce_window` (`window`, a native window for releases, see
+[Shipping a game](../SHIPPING-GAMES.md)).
 
 The finished examples in the repository show everything together:
 

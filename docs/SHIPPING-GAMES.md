@@ -11,7 +11,7 @@ without the `window` feature it runs in the terminal; built with it, it opens a 
 
 ```toml
 [dependencies]
-vnce = { version = "0.1", features = ["window"] }   # add "gpu", "audio" as needed
+vnce = { version = "0.3", features = ["window"] }   # add "gpu", "audio" as needed
 ```
 
 ```sh
